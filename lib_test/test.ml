@@ -51,6 +51,12 @@ let cstruct_equal a b =
     with _ -> false in
       (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
 
+module Result = struct
+  let ( >>= ) m f = m >>= function
+  | `Error x -> fail (Failure x)
+  | `Ok x -> f x
+end
+
 let test_push () =
   let t =
     let name = find_unused_file () in
@@ -62,6 +68,15 @@ let test_push () =
     for i = 0 to 511 do
       Cstruct.set_char sector i (message.[i mod (String.length message)])
     done;
+    Mirage_block.Block.connect name >>= function
+    | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
+    | `Ok device ->
+      let open Result in
+      Producer.create device >>= fun producer ->
+      Consumer.create device >>= fun consumer ->
+      Producer.push producer sector >>= fun () ->
+      Consumer.pop consumer >>= fun buffer ->
+      assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 
 (*
     Block.really_write fd sector >>= fun () ->
     let sector' = Memory.alloc 512 in

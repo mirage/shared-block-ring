@@ -17,11 +17,15 @@
 module Producer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE): sig
   type t
 
+  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
   val push: t -> P.t -> [ `Ok of unit | `Error of string ] Lwt.t
+  val get_free_space: t -> [ `Ok of int64 | `Error of string ] Lwt.t
 end
 
 module Consumer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE): sig
   type t
 
+  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
   val pop: t -> [ `Ok of P.t | `Error of string ] Lwt.t
+  val get_consumed_space: t -> [ `Ok of int64 | `Error of string ] Lwt.t
 end

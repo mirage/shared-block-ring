@@ -22,8 +22,17 @@ module Producer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE) = struct
     next: int64;
   }
 
+  let create device = return (`Ok {
+    device;
+    next = 0L;
+  })
+
   let push t item =
     return (`Error "unimplemented")
+
+  let get_free_space t =
+    return (`Error "unimplemented")
+
 end
 
 module Consumer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE) = struct
@@ -33,7 +42,15 @@ module Consumer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE) = struct
     next: int64;
   }
 
+  let create device = return (`Ok {
+    device;
+    next = 0L;
+  })
+
   let pop t =
+    return (`Error "unimplemented")
+
+  let get_consumed_space t =
     return (`Error "unimplemented")
 end
 
