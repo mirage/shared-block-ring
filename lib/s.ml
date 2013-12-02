@@ -19,11 +19,3 @@ module type BLOCK_DEVICE =
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
 
-module type PERSISTABLE = sig
-  type t
-
-  val sizeof: t -> int
-  val marshal: t -> Cstruct.t -> unit
-  val unmarshal: Cstruct.t -> t option
-end
-

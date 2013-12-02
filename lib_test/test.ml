@@ -17,15 +17,8 @@
 open Lwt
 open OUnit
 
-module Item = struct
-  type t = Cstruct.t
-  let sizeof = Cstruct.len
-  let marshal x buf = Cstruct.blit x 0 buf 0 (Cstruct.len x)
-  let unmarshal buf = Some buf
-end
-
-module Producer = Block_ring.Producer(Mirage_block.Block)(Item)
-module Consumer = Block_ring.Consumer(Mirage_block.Block)(Item)
+module Producer = Block_ring.Producer(Mirage_block.Block)
+module Consumer = Block_ring.Consumer(Mirage_block.Block)
 
 let find_unused_file () =
   (* Find a filename which doesn't exist *)

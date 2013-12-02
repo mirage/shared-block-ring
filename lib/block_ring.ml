@@ -15,17 +15,27 @@
  *)
 open Lwt
 
-module Producer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE) = struct
+(* The format will be:
+   sector 0: producer pointer (as a byte offset)
+   sector 1: consumer pointer (as a byte offset)
+   Each data item shall be prefixed with a 4-byte length, followed by
+   the payload. *)
+
+module Producer(B: S.BLOCK_DEVICE) = struct
 
   type t = {
     device: B.t;
+    info: B.info;
     next: int64;
   }
 
-  let create device = return (`Ok {
-    device;
-    next = 0L;
-  })
+  let create device =
+    B.get_info device >>= fun info ->
+    return (`Ok {
+      device;
+      info;
+      next = 0L;
+    })
 
   let push t item =
     return (`Error "unimplemented")
@@ -35,17 +45,21 @@ module Producer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE) = struct
 
 end
 
-module Consumer(B: S.BLOCK_DEVICE)(P: S.PERSISTABLE) = struct
+module Consumer(B: S.BLOCK_DEVICE) = struct
 
   type t = {
     device: B.t;
+    info: B.info;
     next: int64;
   }
 
-  let create device = return (`Ok {
-    device;
-    next = 0L;
-  })
+  let create device =
+    B.get_info device >>= fun info ->
+    return (`Ok {
+      device;
+      info;
+      next = 0L;
+    })
 
   let pop t =
     return (`Error "unimplemented")
