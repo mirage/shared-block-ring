@@ -65,8 +65,8 @@ let test_push () =
     | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
     | `Ok device ->
       let open Result in
-      Producer.create device >>= fun producer ->
-      Consumer.create device >>= fun consumer ->
+      Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= fun producer ->
+      Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= fun consumer ->
       Producer.push producer sector >>= fun () ->
       Consumer.pop consumer >>= fun buffer ->
       assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 

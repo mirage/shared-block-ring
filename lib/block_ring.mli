@@ -17,7 +17,7 @@
 module Producer(B: S.BLOCK_DEVICE): sig
   type t
 
-  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
+  val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
   val push: t -> Cstruct.t -> [ `Ok of unit | `Error of string ] Lwt.t
   val get_free_space: t -> [ `Ok of int64 | `Error of string ] Lwt.t
 end
@@ -25,7 +25,7 @@ end
 module Consumer(B: S.BLOCK_DEVICE): sig
   type t
 
-  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
+  val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
   val pop: t -> [ `Ok of Cstruct.t | `Error of string ] Lwt.t
   val get_consumed_space: t -> [ `Ok of int64 | `Error of string ] Lwt.t
 end
