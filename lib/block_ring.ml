@@ -114,7 +114,6 @@ module Producer(B: S.BLOCK_DEVICE) = struct
     device: B.t;
     info: B.info;
     mutable producer: int64; (* cache of the last value we wrote *)
-    mutable consumer: int64; (* cache of the last value we read *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
 
@@ -127,12 +126,10 @@ module Producer(B: S.BLOCK_DEVICE) = struct
     ) in
     create device info sector >>= fun () ->
     get_producer device sector >>= fun producer ->
-    get_consumer device sector >>= fun consumer ->
     return (`Ok {
       device;
       info;
       producer;
-      consumer;
       sector;
     })
 
@@ -184,7 +181,6 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
   type t = {
     device: B.t;
     info: B.info;
-    mutable producer: int64; (* cache of the last value we read *)
     mutable consumer: int64; (* cache of the last value we wrote *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
@@ -199,12 +195,10 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
     is_initialised device sector >>= function
     | false -> return (`Error "block ring has not been initialised")
     | true ->
-      get_producer device sector >>= fun producer ->
       get_consumer device sector >>= fun consumer ->
       return (`Ok {
         device;
         info;
-        producer;
         consumer;
         sector;
       })
