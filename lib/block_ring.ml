@@ -20,14 +20,14 @@ open Lwt
    sector 1: producer pointer (as a byte offset)
    sector 2: consumer pointer (as a byte offset)
    Each data item shall be prefixed with a 4-byte length, followed by
-   the payload. *)
+   the payload and padded to the next sector boundary. *)
 
 let sector_signature = 0L
 let sector_producer  = 1L
 let sector_consumer  = 2L
 let sector_data      = 3L
 
-let minimum_size_sectors = Int64.succ sector_data
+let minimum_size_sectors = Int64.add sector_data 1L
 
 let magic = Printf.sprintf "mirage shared-block-device 1.0"
 
@@ -73,6 +73,14 @@ module Common(B: S.BLOCK_DEVICE) = struct
       | `Ok false -> initialise device sector
       | `Error x -> return (`Error x)
 
+  let read sector_offset device sector =
+    B.read device sector_offset [ sector ] >>= fun () ->
+    return (`Ok ())
+
+  let write sector_offset device sector =
+    B.write device sector_offset [ sector ] >>= fun () ->
+    return (`Ok ())
+
   let get sector_offset device sector =
     B.read device sector_offset [ sector ] >>= fun () ->
     return (`Ok (Cstruct.LE.get_uint64 sector 0))
@@ -80,13 +88,16 @@ module Common(B: S.BLOCK_DEVICE) = struct
   let set sector_offset device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v;
-    B.write device sector_offset [ sector ]
+    B.write device sector_offset [ sector ] >>= fun () ->
+    return (`Ok ())
 
   let get_producer = get sector_producer
   let get_consumer = get sector_consumer
 
   let set_producer = set sector_producer
   let set_consumer = set sector_consumer
+
+  let get_data_sectors info = Int64.(sub info.B.size_sectors sector_data)
 
   (* Expose our new error type to the Producer and Consumer below *)
   let ( >>= ) m f = Lwt.bind m (function
@@ -100,8 +111,8 @@ module Producer(B: S.BLOCK_DEVICE) = struct
   type t = {
     device: B.t;
     info: B.info;
-    producer: int64; (* cache of the last value we wrote *)
-    consumer: int64; (* cache of the last value we read *)
+    mutable producer: int64; (* cache of the last value we wrote *)
+    mutable consumer: int64; (* cache of the last value we read *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
 
@@ -119,12 +130,44 @@ module Producer(B: S.BLOCK_DEVICE) = struct
       sector;
     })
 
+  let get_free_sectors t =
+    let open C in
+    get_consumer t.device t.sector >>= fun consumer ->
+    let used = Int64.sub t.producer consumer in
+    let total = C.get_data_sectors t.info in
+    return (`Ok (Int64.sub total used))
+
   let push t item =
-    return (`Error "unimplemented")
-
-  let get_free_space t =
-    return (`Error "unimplemented")
-
+    let open C in
+    let total_sectors = get_data_sectors t.info in
+    get_free_sectors t >>= fun free_sectors ->
+    (* every item has a 4 byte header *)
+    let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
+    if Int64.(mul free_sectors (of_int t.info.B.sector_size)) < needed_bytes
+    then return (`Ok `Retry)
+    else begin
+      (* Write the header and the first block *)
+      Cstruct.LE.set_uint32 t.sector 0 (Int32.of_int (Cstruct.len item));
+      let this = min (t.info.B.sector_size - 4) (Cstruct.len item) in
+      let frag = Cstruct.sub t.sector 4 this in
+      Cstruct.blit item 0 frag 0 this;
+      C.write Int64.(add sector_data (rem t.producer total_sectors)) t.device t.sector >>= fun () ->
+      let remaining = Cstruct.shift item this in
+      let rec loop producer remaining =
+        if Cstruct.len remaining = 0
+        then return (`Ok producer)
+        else
+          let this = min t.info.B.sector_size (Cstruct.len remaining) in
+          let frag = Cstruct.sub t.sector 0 this in
+          Cstruct.blit remaining 0 frag 0 (Cstruct.len frag);
+          C.write Int64.(add sector_data (rem producer total_sectors)) t.device t.sector >>= fun () ->
+          loop (Int64.succ producer) (Cstruct.shift remaining this) in
+      loop (Int64.succ t.producer) remaining >>= fun producer ->
+      (* Write the payload before updating the producer pointer *)
+      set_producer t.device t.sector producer >>= fun () ->
+      t.producer <- producer;
+      return (`Ok `Written)
+    end
 end
 
 module Consumer(B: S.BLOCK_DEVICE) = struct
@@ -133,8 +176,8 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
   type t = {
     device: B.t;
     info: B.info;
-    producer: int64; (* cache of the last value we read *)
-    consumer: int64; (* cache of the last value we wrote *)
+    mutable producer: int64; (* cache of the last value we read *)
+    mutable consumer: int64; (* cache of the last value we wrote *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
 
@@ -155,9 +198,33 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
       })
 
   let pop t =
-    return (`Error "unimplemented")
-
-  let get_consumed_space t =
-    return (`Error "unimplemented")
+    let open C in
+    let total_sectors = get_data_sectors t.info in
+    get_producer t.device t.sector >>= fun producer ->
+    let available_sectors = Int64.sub producer t.consumer in
+    if available_sectors <= 0L
+    then return (`Ok `Retry)
+    else begin
+      read Int64.(add sector_data (rem t.consumer total_sectors)) t.device t.sector >>= fun () ->
+      let len = Int32.to_int (Cstruct.LE.get_uint32 t.sector 0) in
+      let result = Cstruct.create len in
+      let this = min len (t.info.B.sector_size - 4) in
+      let frag = Cstruct.sub t.sector 4 this in
+      Cstruct.blit frag 0 result 0 this;
+      let rec loop consumer remaining =
+        if Cstruct.len remaining = 0
+        then return (`Ok consumer)
+        else
+          let this = min t.info.B.sector_size (Cstruct.len remaining) in
+          let frag = Cstruct.sub remaining 0 this in
+          read Int64.(add sector_data (rem consumer total_sectors)) t.device t.sector >>= fun () ->
+          Cstruct.blit t.sector 0 frag 0 this;
+          loop (Int64.succ consumer) (Cstruct.shift remaining this) in
+      loop (Int64.succ t.consumer) (Cstruct.shift result this) >>= fun consumer ->
+      (* Read the payload before updating the consumer pointer *)
+      set_consumer t.device t.sector consumer >>= fun () ->
+      t.consumer <- consumer;
+      return (`Ok (`Read result))
+    end
 end
 

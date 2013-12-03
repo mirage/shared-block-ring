@@ -50,14 +50,24 @@ module Result = struct
   | `Ok x -> f x
 end
 
+let written_retry_to_string = function
+  | `Written -> "`Written"
+  | `Retry -> "`Retry"
+
 let test_push () =
   let t =
     let name = find_unused_file () in
-    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0444 >>= fun fd ->
+    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
     let size = Int64.(mul 1024L 1024L) in
+    (* Write the last sector to make sure the file has the intended size *)
     Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
     let message = "All work and no play makes Dave a dull boy.\n" in
     let sector = Mirage_block.Block.Memory.alloc 512 in
+    for i = 0 to 511 do
+      Cstruct.set_uint8 sector i 0
+    done;
+    Mirage_block.Block.really_write fd sector >>= fun () ->
+
     for i = 0 to 511 do
       Cstruct.set_char sector i (message.[i mod (String.length message)])
     done;
@@ -67,9 +77,12 @@ let test_push () =
       let open Result in
       Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= fun producer ->
       Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= fun consumer ->
-      Producer.push producer sector >>= fun () ->
-      Consumer.pop consumer >>= fun buffer ->
-      assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 
+      Producer.push producer sector >>= fun x ->
+      assert_equal ~printer:written_retry_to_string `Written x;
+      Consumer.pop consumer >>= function
+      | `Retry -> failwith "retry"
+      | `Read buffer ->
+        assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 
 (*
     Block.really_write fd sector >>= fun () ->
     let sector' = Memory.alloc 512 in
