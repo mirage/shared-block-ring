@@ -44,7 +44,7 @@ let cstruct_equal a b =
     with _ -> false in
       (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
 
-let interesting_payload_lengths = [
+let interesting_lengths = [
   0; (* possible base case *)
   1; (* easily fits inside a sector with the 4 byte header *)
   512 - 4 - 1;
@@ -56,52 +56,42 @@ let interesting_payload_lengths = [
 (* ring too full *)
 (* wrap around works *)
 
-let test_push () =
+let fill_with_message buffer message =
+    for i = 0 to Cstruct.len buffer - 1 do
+      Cstruct.set_char buffer i (message.[i mod (String.length message)])
+    done
+
+let test_push_pop length () =
   let t =
     let name = find_unused_file () in
     Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
     let size = Int64.(mul 1024L 1024L) in
     (* Write the last sector to make sure the file has the intended size *)
     Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
-    let message = "All work and no play makes Dave a dull boy.\n" in
     let sector = Mirage_block.Block.Memory.alloc 512 in
-    for i = 0 to 511 do
-      Cstruct.set_uint8 sector i 0
-    done;
+    fill_with_message sector "\xde\xead\xbe\xef";
     Mirage_block.Block.really_write fd sector >>= fun () ->
 
-    for i = 0 to 511 do
-      Cstruct.set_char sector i (message.[i mod (String.length message)])
-    done;
+    let payload = Cstruct.create length in
+    let message = "All work and no play makes Dave a dull boy.\n" in
+    fill_with_message payload message;
+
     Mirage_block.Block.connect name >>= function
     | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
     | `Ok device ->
-      Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
-      | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
-      | `Ok producer ->
-        Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
-        | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
-        | `Ok consumer ->
-          Producer.push producer sector >>= function
-          | `Error _ | `TooBig | `Retry -> failwith "push"
-          | `Ok () ->
-            Consumer.pop consumer >>= function
-            | `Error _ | `Retry -> failwith "pop"
-            | `Ok buffer ->
-              assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 
-(*
-    Block.really_write fd sector >>= fun () ->
-    let sector' = Memory.alloc 512 in
-    Block.connect name >>= function
-    | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
-    | `Ok device ->
-      Block.read device Int64.(sub (div size 512L) 1L) [ sector' ] >>= function
-      | `Error _ -> failwith (Printf.sprintf "Block.read %s failed" name)
-      | `Ok () -> begin
-        assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector sector';
-        return ()
-      end in
-*)
+    Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
+    | `Ok producer ->
+    Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
+    | `Ok consumer ->
+    Producer.push producer payload >>= function
+    | `Error _ | `TooBig | `Retry -> failwith "push"
+    | `Ok () ->
+    Consumer.pop consumer >>= function
+    | `Error _ | `Retry -> failwith "pop"
+    | `Ok buffer ->
+    assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
     return () in
   Lwt_main.run t
 
@@ -112,7 +102,10 @@ let _ =
   ] (fun x -> Printf.fprintf stderr "Ignoring argument: %s" x)
   "Test shared block ring";
 
+  let test_push_pops = List.map (fun length ->
+    Printf.sprintf "push pop %d bytes" length >:: (test_push_pop length)
+  ) interesting_lengths in
+
   let suite = "shared-block-ring" >::: [
-    "test open read" >:: test_push;
-  ] in
+  ] @ test_push_pops in
   run_test_tt ~verbose:!verbose suite
