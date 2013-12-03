@@ -18,12 +18,12 @@ module Producer(B: S.BLOCK_DEVICE): sig
   type t
 
   val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
-  val push: t -> Cstruct.t -> [ `Ok of [ `Written | `TooBig | `Retry ] | `Error of string ] Lwt.t
+  val push: t -> Cstruct.t -> [ `Ok of unit | `TooBig | `Retry | `Error of string ] Lwt.t
 end
 
 module Consumer(B: S.BLOCK_DEVICE): sig
   type t
 
   val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
-  val pop: t -> [ `Ok of [ `Read of Cstruct.t | `Retry ] | `Error of string ] Lwt.t
+  val pop: t -> [ `Ok of Cstruct.t | `Retry | `Error of string ] Lwt.t
 end

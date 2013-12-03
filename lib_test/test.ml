@@ -44,17 +44,6 @@ let cstruct_equal a b =
     with _ -> false in
       (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
 
-module Result = struct
-  let ( >>= ) m f = m >>= function
-  | `Error x -> fail (Failure x)
-  | `Ok x -> f x
-end
-
-let written_retry_to_string = function
-  | `Written -> "`Written"
-  | `Retry -> "`Retry"
-  | `TooBig -> "`TooBig"
-
 let interesting_payload_lengths = [
   0; (* possible base case *)
   1; (* easily fits inside a sector with the 4 byte header *)
@@ -87,15 +76,19 @@ let test_push () =
     Mirage_block.Block.connect name >>= function
     | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
     | `Ok device ->
-      let open Result in
-      Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= fun producer ->
-      Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= fun consumer ->
-      Producer.push producer sector >>= fun x ->
-      assert_equal ~printer:written_retry_to_string `Written x;
-      Consumer.pop consumer >>= function
-      | `Retry -> failwith "retry"
-      | `Read buffer ->
-        assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 
+      Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
+      | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
+      | `Ok producer ->
+        Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
+        | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
+        | `Ok consumer ->
+          Producer.push producer sector >>= function
+          | `Error _ | `TooBig | `Retry -> failwith "push"
+          | `Ok () ->
+            Consumer.pop consumer >>= function
+            | `Error _ | `Retry -> failwith "pop"
+            | `Ok buffer ->
+              assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal sector buffer; 
 (*
     Block.really_write fd sector >>= fun () ->
     let sector' = Memory.alloc 512 in

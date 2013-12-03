@@ -102,6 +102,8 @@ module Common(B: S.BLOCK_DEVICE) = struct
   (* Expose our new error type to the Producer and Consumer below *)
   let ( >>= ) m f = Lwt.bind m (function
   | `Ok x -> f x
+  | `TooBig -> return `TooBig
+  | `Retry -> return `Retry
   | `Error x -> return (`Error x))
 end
 
@@ -119,6 +121,10 @@ module Producer(B: S.BLOCK_DEVICE) = struct
   let create device sector =
     B.get_info device >>= fun info ->
     let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+    | `Ok x -> f x
+    | `Error x -> return (`Error x)
+    ) in
     create device info sector >>= fun () ->
     get_producer device sector >>= fun producer ->
     get_consumer device sector >>= fun consumer ->
@@ -144,9 +150,9 @@ module Producer(B: S.BLOCK_DEVICE) = struct
     let total_sectors = get_data_sectors t.info in
     get_free_sectors t >>= fun free_sectors ->
     if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
-    then return (`Ok `TooBig)
+    then return `TooBig
     else if Int64.(mul free_sectors (of_int t.info.B.sector_size)) < needed_bytes
-    then return (`Ok `Retry)
+    then return `Retry
     else begin
       (* Write the header and the first block *)
       Cstruct.LE.set_uint32 t.sector 0 (Int32.of_int (Cstruct.len item));
@@ -168,7 +174,7 @@ module Producer(B: S.BLOCK_DEVICE) = struct
       (* Write the payload before updating the producer pointer *)
       set_producer t.device t.sector producer >>= fun () ->
       t.producer <- producer;
-      return (`Ok `Written)
+      return (`Ok ())
     end
 end
 
@@ -186,6 +192,10 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
   let create device sector =
     B.get_info device >>= fun info ->
     let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+    | `Ok x -> f x
+    | `Error x -> return (`Error x)
+    ) in
     is_initialised device sector >>= function
     | false -> return (`Error "block ring has not been initialised")
     | true ->
@@ -201,11 +211,16 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
 
   let pop t =
     let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+    | `Ok x -> f x
+    | `Retry -> return `Retry
+    | `Error x -> return (`Error x)
+    ) in
     let total_sectors = get_data_sectors t.info in
     get_producer t.device t.sector >>= fun producer ->
     let available_sectors = Int64.sub producer t.consumer in
     if available_sectors <= 0L
-    then return (`Ok `Retry)
+    then return `Retry
     else begin
       read Int64.(add sector_data (rem t.consumer total_sectors)) t.device t.sector >>= fun () ->
       let len = Int32.to_int (Cstruct.LE.get_uint32 t.sector 0) in
@@ -226,7 +241,7 @@ module Consumer(B: S.BLOCK_DEVICE) = struct
       (* Read the payload before updating the consumer pointer *)
       set_consumer t.device t.sector consumer >>= fun () ->
       t.consumer <- consumer;
-      return (`Ok (`Read result))
+      return (`Ok result)
     end
 end
 
