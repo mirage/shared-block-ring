@@ -54,14 +54,24 @@ let interesting_lengths = [
 
 (* ring too small *)
 (* ring too full *)
-(* wrap around works *)
 
 let fill_with_message buffer message =
     for i = 0 to Cstruct.len buffer - 1 do
       Cstruct.set_char buffer i (message.[i mod (String.length message)])
     done
 
-let test_push_pop length () =
+let size = 16384L
+
+(* number of pushes before we pop *)
+let interesting_batch_sizes = [
+  1;
+  2;
+  3;
+  4;
+  5;
+]
+ 
+let test_push_pop length batch () =
   let t =
     let name = find_unused_file () in
     Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
@@ -91,17 +101,30 @@ let test_push_pop length () =
         Consumer.pop consumer >>= function
         | `Ok _ | `Error _ -> failwith "empty pop"
         | `Retry ->
-        Producer.push producer payload >>= function
-        | `Error _ | `TooBig | `Retry -> failwith "push"
-        | `Ok () ->
-        Consumer.pop consumer >>= function
-        | `Error _ | `Retry -> failwith "pop"
-        | `Ok buffer ->
-        assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
+        let rec push = function
+        | 0 -> return ()
+        | m ->
+          Producer.push producer payload >>= function
+          | `Error _ | `TooBig | `Retry -> failwith "push"
+          | `Ok () -> push (m - 1) in
+        push batch >>= fun () ->
+        let rec pop = function
+        | 0 -> return ()
+        | m ->
+          Consumer.pop consumer >>= function
+          | `Error _ | `Retry -> failwith "pop"
+          | `Ok buffer ->
+            assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
+            pop (m - 1) in
+        pop batch >>= fun () ->
         loop (n - 1) in
     (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
     loop Int64.(to_int (mul 2L (div size 512L))) in
   Lwt_main.run t
+
+let rec allpairs xs ys = match xs with
+  | [] -> []
+  | x :: xs -> List.map (fun y -> x, y) ys @ (allpairs xs ys)
 
 let _ =
   let verbose = ref false in
@@ -110,9 +133,9 @@ let _ =
   ] (fun x -> Printf.fprintf stderr "Ignoring argument: %s" x)
   "Test shared block ring";
 
-  let test_push_pops = List.map (fun length ->
-    Printf.sprintf "push pop %d bytes" length >:: (test_push_pop length)
-  ) interesting_lengths in
+  let test_push_pops = List.map (fun (length, batch) ->
+    Printf.sprintf "push pop %d bytes in batches of %d" length batch >:: (test_push_pop length batch)
+  ) (allpairs interesting_lengths interesting_batch_sizes) in
 
   let suite = "shared-block-ring" >::: [
   ] @ test_push_pops in
