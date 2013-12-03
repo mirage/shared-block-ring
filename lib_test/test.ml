@@ -53,7 +53,6 @@ let interesting_lengths = [
 ]
 
 (* ring too small *)
-(* ring too full *)
 
 let fill_with_message buffer message =
     for i = 0 to Cstruct.len buffer - 1 do
@@ -119,7 +118,17 @@ let test_push_pop length batch () =
         pop batch >>= fun () ->
         loop (n - 1) in
     (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
-    loop Int64.(to_int (mul 2L (div size 512L))) in
+    loop Int64.(to_int (mul 2L (div size 512L))) >>= fun () ->
+    (* count how many items we can push in total *)
+    let rec loop acc =
+      Producer.push producer payload >>= function
+      | `Retry -> return acc
+      | `Error _ | `TooBig -> failwith "counting the number of pushes"
+      | `Ok () -> loop (acc + 1) in
+    loop 0 >>= fun n ->
+    let expected = Int64.(to_int (div (sub (div size 512L) 3L) (div (of_int (Cstruct.len payload + 511 + 4)) 512L))) in
+    assert_equal ~printer:string_of_int expected n;
+    return () in
   Lwt_main.run t
 
 let rec allpairs xs ys = match xs with
