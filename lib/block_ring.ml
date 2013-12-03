@@ -138,12 +138,14 @@ module Producer(B: S.BLOCK_DEVICE) = struct
     return (`Ok (Int64.sub total used))
 
   let push t item =
+    (* every item has a 4 byte header *)
+    let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
     let open C in
     let total_sectors = get_data_sectors t.info in
     get_free_sectors t >>= fun free_sectors ->
-    (* every item has a 4 byte header *)
-    let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
-    if Int64.(mul free_sectors (of_int t.info.B.sector_size)) < needed_bytes
+    if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
+    then return (`Ok `TooBig)
+    else if Int64.(mul free_sectors (of_int t.info.B.sector_size)) < needed_bytes
     then return (`Ok `Retry)
     else begin
       (* Write the header and the first block *)

@@ -53,6 +53,19 @@ end
 let written_retry_to_string = function
   | `Written -> "`Written"
   | `Retry -> "`Retry"
+  | `TooBig -> "`TooBig"
+
+let interesting_payload_lengths = [
+  0; (* possible base case *)
+  1; (* easily fits inside a sector with the 4 byte header *)
+  512 - 4 - 1;
+  512 - 4;
+  512 - 4 + 1;
+]
+
+(* ring too small *)
+(* ring too full *)
+(* wrap around works *)
 
 let test_push () =
   let t =
