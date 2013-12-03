@@ -65,7 +65,7 @@ let test_push_pop length () =
   let t =
     let name = find_unused_file () in
     Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
-    let size = Int64.(mul 1024L 1024L) in
+    let size = 16384L in
     (* Write the last sector to make sure the file has the intended size *)
     Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
     let sector = Mirage_block.Block.Memory.alloc 512 in
@@ -85,14 +85,22 @@ let test_push_pop length () =
     Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
     | `Ok consumer ->
-    Producer.push producer payload >>= function
-    | `Error _ | `TooBig | `Retry -> failwith "push"
-    | `Ok () ->
-    Consumer.pop consumer >>= function
-    | `Error _ | `Retry -> failwith "pop"
-    | `Ok buffer ->
-    assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
-    return () in
+    let rec loop = function
+      | 0 -> return ()
+      | n ->
+        Consumer.pop consumer >>= function
+        | `Ok _ | `Error _ -> failwith "empty pop"
+        | `Retry ->
+        Producer.push producer payload >>= function
+        | `Error _ | `TooBig | `Retry -> failwith "push"
+        | `Ok () ->
+        Consumer.pop consumer >>= function
+        | `Error _ | `Retry -> failwith "pop"
+        | `Ok buffer ->
+        assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
+        loop (n - 1) in
+    (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
+    loop Int64.(to_int (mul 2L (div size 512L))) in
   Lwt_main.run t
 
 let _ =
