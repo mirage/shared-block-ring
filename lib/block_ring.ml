@@ -25,6 +25,9 @@ open Lwt
 let sector_signature = 0L
 let sector_producer  = 1L
 let sector_consumer  = 2L
+let sector_data      = 3L
+
+let minimum_size_sectors = Int64.succ sector_data
 
 let magic = Printf.sprintf "mirage shared-block-device 1.0"
 
@@ -60,12 +63,15 @@ module Common(B: S.BLOCK_DEVICE) = struct
     Cstruct.blit_to_string sector 0 magic' 0 (String.length magic');
     return (`Ok (magic = magic'))
 
-  let create device sector =
+  let create device info sector =
     let open Lwt in
-    is_initialised device sector >>= function
-    | `Ok true -> return (`Ok ())
-    | `Ok false -> initialise device sector
-    | `Error x -> return (`Error x)
+    if info.B.size_sectors < minimum_size_sectors
+    then return (`Error (Printf.sprintf "The block device is too small for a ring; the minimum size is %Ld sectors" minimum_size_sectors))
+    else
+      is_initialised device sector >>= function
+      | `Ok true -> return (`Ok ())
+      | `Ok false -> initialise device sector
+      | `Error x -> return (`Error x)
 
   let get sector_offset device sector =
     B.read device sector_offset [ sector ] >>= fun () ->
@@ -102,7 +108,7 @@ module Producer(B: S.BLOCK_DEVICE) = struct
   let create device sector =
     B.get_info device >>= fun info ->
     let open C in
-    create device sector >>= fun () ->
+    create device info sector >>= fun () ->
     get_producer device sector >>= fun producer ->
     get_consumer device sector >>= fun consumer ->
     return (`Ok {
