@@ -36,15 +36,14 @@ let zero buf =
     Cstruct.set_uint8 buf i 0
   done
 
-module Common(B: S.BLOCK_DEVICE) = struct
-
+module Common(B: S.BLOCK) = struct
   (* Convert the block errors *)
   let ( >>= ) m f = m >>= function
   | `Ok x -> f x
-  | `Error (B.Unknown x) -> return (`Error x)
-  | `Error B.Unimplemented -> return (`Error "unimplemented")
-  | `Error B.Is_read_only -> return (`Error "is_read_only")
-  | `Error B.Disconnected -> return (`Error "disconnected")
+  | `Error (`Unknown x) -> return (`Error x)
+  | `Error `Unimplemented -> return (`Error "unimplemented")
+  | `Error `Is_read_only -> return (`Error "is_read_only")
+  | `Error `Disconnected -> return (`Error "disconnected")
 
   let initialise device sector =
     (* Initialise the producer and consumer before writing the magic
@@ -107,7 +106,7 @@ module Common(B: S.BLOCK_DEVICE) = struct
   | `Error x -> return (`Error x))
 end
 
-module Producer(B: S.BLOCK_DEVICE) = struct
+module Producer(B: S.BLOCK) = struct
   module C = Common(B)
 
   type t = {
@@ -175,7 +174,7 @@ module Producer(B: S.BLOCK_DEVICE) = struct
     end
 end
 
-module Consumer(B: S.BLOCK_DEVICE) = struct
+module Consumer(B: S.BLOCK) = struct
   module C = Common(B)
 
   type t = {
