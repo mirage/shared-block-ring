@@ -14,14 +14,14 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module Producer(B: S.BLOCK_DEVICE): sig
+module Producer(B: S.BLOCK): sig
   type t
 
   val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
   val push: t -> Cstruct.t -> [ `Ok of unit | `TooBig | `Retry | `Error of string ] Lwt.t
 end
 
-module Consumer(B: S.BLOCK_DEVICE): sig
+module Consumer(B: S.BLOCK): sig
   type t
 
   val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t

@@ -16,9 +16,10 @@
 
 open Lwt
 open OUnit
+open OS
 
-module Producer = Block_ring.Producer(Mirage_block.Block)
-module Consumer = Block_ring.Consumer(Mirage_block.Block)
+module Producer = Block_ring.Producer(Block)
+module Consumer = Block_ring.Consumer(Block)
 
 let find_unused_file () =
   (* Find a filename which doesn't exist *)
@@ -43,6 +44,11 @@ let cstruct_equal a b =
       true
     with _ -> false in
       (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
+
+let alloc sector_size =
+  let page = Io_page.(to_cstruct (get 1)) in
+  let sector = Cstruct.sub page 0 sector_size in
+  sector
 
 let interesting_lengths = [
   0; (* possible base case *)
@@ -77,21 +83,21 @@ let test_push_pop length batch () =
     let size = 16384L in
     (* Write the last sector to make sure the file has the intended size *)
     Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
-    let sector = Mirage_block.Block.Memory.alloc 512 in
+    let sector = alloc 512 in
     fill_with_message sector "\xde\xead\xbe\xef";
-    Mirage_block.Block.really_write fd sector >>= fun () ->
+    Block.really_write fd sector >>= fun () ->
 
     let payload = Cstruct.create length in
     let message = "All work and no play makes Dave a dull boy.\n" in
     fill_with_message payload message;
 
-    Mirage_block.Block.connect name >>= function
+    Block.connect name >>= function
     | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
     | `Ok device ->
-    Producer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
+    Producer.create device (alloc 512) >>= function
     | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
     | `Ok producer ->
-    Consumer.create device (Mirage_block.Block.Memory.alloc 512) >>= function
+    Consumer.create device (alloc 512) >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
     | `Ok consumer ->
     let rec loop = function
