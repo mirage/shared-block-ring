@@ -98,6 +98,11 @@ module Common(B: S.BLOCK) = struct
 
   let get_data_sectors info = Int64.(sub info.B.size_sectors sector_data)
 
+  let get_sector_and_offset info byte_offset =
+    let sector = Int64.(div byte_offset (of_int info.B.sector_size)) in
+    let offset = Int64.(to_int (rem byte_offset (of_int info.B.sector_size))) in
+    (sector,offset)
+
   (* Expose our new error type to the Producer and Consumer below *)
   let ( >>= ) m f = Lwt.bind m (function
   | `Ok x -> f x
@@ -132,46 +137,71 @@ module Producer(B: S.BLOCK) = struct
       sector;
     })
 
-  let get_free_sectors t =
+  let get_free_bytes t =
     let open C in
     get_consumer t.device t.sector >>= fun consumer ->
     let used = Int64.sub t.producer consumer in
-    let total = C.get_data_sectors t.info in
+    let total = Int64.(mul (of_int t.info.B.sector_size) (C.get_data_sectors t.info)) in
     return (`Ok (Int64.sub total used))
 
+  let read_modify_write t sector fn =
+    let open C in
+    let total_sectors = get_data_sectors t.info in
+    let realsector = Int64.(add sector_data (rem sector total_sectors)) in
+    read realsector t.device t.sector >>= fun () ->
+    let result = fn () in
+    write realsector t.device t.sector >>= fun () ->
+    return (`Ok result)
+    
+  let unsafe_write t item =
+    let open C in
+    (* add a 4 byte header of size, and round up to the next 4-byte offset *)
+    let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (Cstruct.len item)))) in
+    let first_sector = Int64.(div t.producer (of_int t.info.B.sector_size)) in
+    let first_offset = Int64.(to_int (rem t.producer (of_int t.info.B.sector_size))) in
+
+    (* Do first sector. We know that we'll always be able to fit in the length header into
+       the first page as it's only a 4-byte integer and we're padding to 4-byte offsets. *)
+    read_modify_write t first_sector (fun () ->
+      (* Write the header and anything else we can *)
+      Cstruct.LE.set_uint32 t.sector first_offset (Int32.of_int (Cstruct.len item));
+      if first_offset + 4 = t.info.B.sector_size 
+      then item (* We can't write anything else, so just return the item *)
+      else begin
+        let this = min (t.info.B.sector_size - first_offset - 4) (Cstruct.len item) in
+        Cstruct.blit item 0 t.sector (first_offset + 4) this;
+        Cstruct.shift item this
+      end) >>= fun remaining ->
+
+    let rec loop sector remaining =
+      if Cstruct.len remaining = 0
+      then return (`Ok ())
+      else begin
+        read_modify_write t sector (fun () ->
+          let this = min t.info.B.sector_size (Cstruct.len remaining) in
+          let frag = Cstruct.sub t.sector 0 this in
+          Cstruct.blit remaining 0 frag 0 (Cstruct.len frag);
+          Cstruct.shift remaining this) >>= fun remaining ->
+        loop (Int64.succ sector) remaining
+      end in
+    loop (Int64.succ first_sector) remaining >>= fun () ->
+      (* Write the payload before updating the producer pointer *)
+    let new_producer = Int64.add t.producer needed_bytes in
+    set_producer t.device t.sector new_producer >>= fun () ->
+    t.producer <- new_producer;
+    return (`Ok ())
+      
   let push t item =
     (* every item has a 4 byte header *)
     let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
     let open C in
     let total_sectors = get_data_sectors t.info in
-    get_free_sectors t >>= fun free_sectors ->
+    get_free_bytes t >>= fun free_bytes ->
     if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
     then return `TooBig
-    else if Int64.(mul free_sectors (of_int t.info.B.sector_size)) < needed_bytes
+    else if free_bytes < needed_bytes
     then return `Retry
-    else begin
-      (* Write the header and the first block *)
-      Cstruct.LE.set_uint32 t.sector 0 (Int32.of_int (Cstruct.len item));
-      let this = min (t.info.B.sector_size - 4) (Cstruct.len item) in
-      let frag = Cstruct.sub t.sector 4 this in
-      Cstruct.blit item 0 frag 0 this;
-      C.write Int64.(add sector_data (rem t.producer total_sectors)) t.device t.sector >>= fun () ->
-      let remaining = Cstruct.shift item this in
-      let rec loop producer remaining =
-        if Cstruct.len remaining = 0
-        then return (`Ok producer)
-        else
-          let this = min t.info.B.sector_size (Cstruct.len remaining) in
-          let frag = Cstruct.sub t.sector 0 this in
-          Cstruct.blit remaining 0 frag 0 (Cstruct.len frag);
-          C.write Int64.(add sector_data (rem producer total_sectors)) t.device t.sector >>= fun () ->
-          loop (Int64.succ producer) (Cstruct.shift remaining this) in
-      loop (Int64.succ t.producer) remaining >>= fun producer ->
-      (* Write the payload before updating the producer pointer *)
-      set_producer t.device t.sector producer >>= fun () ->
-      t.producer <- producer;
-      return (`Ok ())
-    end
+    else unsafe_write t item
 end
 
 module Consumer(B: S.BLOCK) = struct
@@ -211,30 +241,40 @@ module Consumer(B: S.BLOCK) = struct
     ) in
     let total_sectors = get_data_sectors t.info in
     get_producer t.device t.sector >>= fun producer ->
-    let available_sectors = Int64.sub producer t.consumer in
-    if available_sectors <= 0L
+    let available_bytes = Int64.sub producer t.consumer in
+    if available_bytes <= 0L
     then return `Retry
     else begin
-      read Int64.(add sector_data (rem t.consumer total_sectors)) t.device t.sector >>= fun () ->
-      let len = Int32.to_int (Cstruct.LE.get_uint32 t.sector 0) in
+      let first_sector,first_offset = get_sector_and_offset t.info t.consumer in
+      read Int64.(add sector_data (rem first_sector total_sectors)) t.device t.sector >>= fun () ->
+      let len = Int32.to_int (Cstruct.LE.get_uint32 t.sector first_offset) in
       let result = Cstruct.create len in
-      let this = min len (t.info.B.sector_size - 4) in
-      let frag = Cstruct.sub t.sector 4 this in
+      let this = min len (t.info.B.sector_size - first_offset - 4) in
+      let frag = Cstruct.sub t.sector (4 + first_offset) this in
       Cstruct.blit frag 0 result 0 this;
       let rec loop consumer remaining =
         if Cstruct.len remaining = 0
-        then return (`Ok consumer)
+        then return (`Ok ())
         else
           let this = min t.info.B.sector_size (Cstruct.len remaining) in
           let frag = Cstruct.sub remaining 0 this in
           read Int64.(add sector_data (rem consumer total_sectors)) t.device t.sector >>= fun () ->
           Cstruct.blit t.sector 0 frag 0 this;
           loop (Int64.succ consumer) (Cstruct.shift remaining this) in
-      loop (Int64.succ t.consumer) (Cstruct.shift result this) >>= fun consumer ->
+      loop (Int64.succ first_sector) (Cstruct.shift result this) >>= fun () ->
       (* Read the payload before updating the consumer pointer *)
-      set_consumer t.device t.sector consumer >>= fun () ->
-      t.consumer <- consumer;
-      return (`Ok result)
+      let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (len)))) in
+      return (`Ok (Int64.(add t.consumer needed_bytes),result))
     end
+
+  let set_consumer t consumer =
+    let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+      | `Ok x -> f x
+      | `Error x -> return (`Error x)
+    ) in
+    set_consumer t.device t.sector consumer >>= fun () ->
+    t.consumer <- consumer;
+    return (`Ok ())
 end
 

@@ -25,5 +25,6 @@ module Consumer(B: S.BLOCK): sig
   type t
 
   val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
-  val pop: t -> [ `Ok of Cstruct.t | `Retry | `Error of string ] Lwt.t
+  val pop: t -> [ `Ok of Int64.t * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  val set_consumer: t -> Cstruct.uint64 -> [ `Ok of unit | `Error of string ] Lwt.t
 end
