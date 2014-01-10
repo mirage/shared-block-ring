@@ -56,6 +56,7 @@ let interesting_lengths = [
   512 - 4 - 1;
   512 - 4;
   512 - 4 + 1;
+  2000; (* More than 3 sectors *)
 ]
 
 (* ring too small *)
@@ -118,9 +119,12 @@ let test_push_pop length batch () =
         | m ->
           Consumer.pop consumer >>= function
           | `Error _ | `Retry -> failwith "pop"
-          | `Ok buffer ->
+          | `Ok (consumer_val,buffer) ->
             assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
-            pop (m - 1) in
+	    Consumer.set_consumer consumer consumer_val >>= function
+	    | `Ok () ->
+              pop (m - 1) 
+	    | `Error _ -> failwith "pop" in
         pop batch >>= fun () ->
         loop (n - 1) in
     (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
@@ -132,7 +136,7 @@ let test_push_pop length batch () =
       | `Error _ | `TooBig -> failwith "counting the number of pushes"
       | `Ok () -> loop (acc + 1) in
     loop 0 >>= fun n ->
-    let expected = Int64.(to_int (div (sub (div size 512L) 3L) (div (of_int (Cstruct.len payload + 511 + 4)) 512L))) in
+    let expected = Int64.(to_int (div (sub size 1536L) (logand (lognot 3L) (of_int (Cstruct.len payload + 7))))) in
     assert_equal ~printer:string_of_int expected n;
     return () in
   Lwt_main.run t
