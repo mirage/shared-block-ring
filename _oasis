@@ -1,6 +1,6 @@
 OASISFormat: 0.3
 Name:        shared-block-ring
-Version:     0.5.0
+Version:     1.0.0
 Synopsis:    Simple persistent queue over a block device
 Authors:     David Scott
 License:     ISC
@@ -12,7 +12,7 @@ Library shared_block_ring
   Path:               lib
   Findlibname:        shared-block-ring
   Modules:            Block_ring
-  BuildDepends:       cstruct, lwt, lwt.unix, mirage-types
+  BuildDepends:       cstruct, lwt, lwt.unix, mirage-types, io-page, sexplib, sexplib.syntax
 
 Executable test
   CompiledObject:     best
@@ -20,7 +20,7 @@ Executable test
   MainIs:             test.ml
   Custom:             true
   Install:            false
-  BuildDepends:       lwt, lwt.unix, mirage-block-unix, mirage-unix, shared-block-ring, cstruct, oUnit
+  BuildDepends:       lwt, lwt.unix, mirage-block-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix
 
 Test test
   Command:            ./test.native
