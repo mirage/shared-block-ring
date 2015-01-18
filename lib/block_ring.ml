@@ -160,6 +160,8 @@ module Producer(B: S.BLOCK) = struct
     write realsector t.device t.sector >>= fun () ->
     return (`Ok result)
 
+  type position = int64 with sexp_of
+
   let unsafe_write t item =
     let open C in
     (* add a 4 byte header of size, and round up to the next 4-byte offset *)
@@ -194,6 +196,14 @@ module Producer(B: S.BLOCK) = struct
     loop (Int64.succ first_sector) remaining >>= fun () ->
       (* Write the payload before updating the producer pointer *)
     let new_producer = Int64.add t.producer needed_bytes in
+    return (`Ok new_producer)
+
+  let advance t new_producer =
+    let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+      | `Ok x -> f x
+      | `Error x -> return (`Error x)
+    ) in
     set_producer t.device t.sector new_producer >>= fun () ->
     t.producer <- new_producer;
     return (`Ok ())

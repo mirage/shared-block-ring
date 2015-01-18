@@ -29,14 +29,23 @@ module Producer(B: S.BLOCK): sig
   (** [create blockdevice] initialises a shared ring on top of [blockdevice]
       where we will be able to [push] variable-sized items. *)
 
-  val push: t -> Cstruct.t -> [ `Ok of unit | `TooBig | `Retry | `Error of string ] Lwt.t
-  (** [push t item] pushes [item] onto the ring [t].
-      [`Ok ()] means the update has been safely written to the block device.
+  type position with sexp_of
+  (** A position within the ring *)
+
+  val push: t -> Cstruct.t -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
+  (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
+      the Consumer.
+      [`Ok position] means the update has been safely written to the block device
+        and can be exposed to the Consumer by calling [advance position].
       [`TooBig] means the item is too big for the ring: we adopt the convention
         that items must be written to the ring in one go
       [`Retry] means that the item should fit but there is temporarily not
         enough space in the ring. The client should retry later. *)
-  end
+
+  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
+  (** [advance t position] exposes the item associated with [position] to
+      the Consumer so it can be [pop]ped. *)
+end
 
 module Consumer(B: S.BLOCK): sig
   type t

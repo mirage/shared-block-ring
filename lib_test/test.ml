@@ -111,7 +111,12 @@ let test_push_pop length batch () =
         | m ->
           Producer.push producer payload >>= function
           | `Error _ | `TooBig | `Retry -> failwith "push"
-          | `Ok () -> push (m - 1) in
+          | `Ok position ->
+            (Producer.advance producer position >>= function
+              | `Error x -> failwith "Producer.advance"
+              | `Ok () -> return ()
+            ) >>= fun () ->
+            push (m - 1) in
         push batch >>= fun () ->
         let rec pop = function
         | 0 -> return ()
@@ -133,7 +138,12 @@ let test_push_pop length batch () =
       Producer.push producer payload >>= function
       | `Retry -> return acc
       | `Error _ | `TooBig -> failwith "counting the number of pushes"
-      | `Ok () -> loop (acc + 1) in
+      | `Ok position ->
+        (Producer.advance producer position >>= function
+        | `Error x -> failwith "Producer.advance"
+        | `Ok () -> return ()
+        ) >>= fun () ->
+        loop (acc + 1) in
     loop 0 >>= fun n ->
     let expected = Int64.(to_int (div (sub size 1536L) (logand (lognot 3L) (of_int (Cstruct.len payload + 7))))) in
     assert_equal ~printer:string_of_int expected n;
