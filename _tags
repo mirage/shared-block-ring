@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: cf06811bab7c179f378002ba27c4e974)
+# DO NOT EDIT (digest: a1ff6aed14f44dd0c97a4f1eb3ce9d85)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -23,6 +23,32 @@ true: annot, bin_annot
 <lib/*.ml{,i,y}>: pkg_mirage-types
 <lib/*.ml{,i,y}>: pkg_sexplib
 <lib/*.ml{,i,y}>: pkg_sexplib.syntax
+# Executable shared-block-ring
+<example/main.{native,byte}>: pkg_cmdliner
+<example/main.{native,byte}>: pkg_cstruct
+<example/main.{native,byte}>: pkg_io-page
+<example/main.{native,byte}>: pkg_io-page.unix
+<example/main.{native,byte}>: pkg_lwt
+<example/main.{native,byte}>: pkg_lwt.unix
+<example/main.{native,byte}>: pkg_mirage-block-unix
+<example/main.{native,byte}>: pkg_mirage-types
+<example/main.{native,byte}>: pkg_oUnit
+<example/main.{native,byte}>: pkg_sexplib
+<example/main.{native,byte}>: pkg_sexplib.syntax
+<example/main.{native,byte}>: use_shared_block_ring
+<example/*.ml{,i,y}>: pkg_cmdliner
+<example/*.ml{,i,y}>: pkg_cstruct
+<example/*.ml{,i,y}>: pkg_io-page
+<example/*.ml{,i,y}>: pkg_io-page.unix
+<example/*.ml{,i,y}>: pkg_lwt
+<example/*.ml{,i,y}>: pkg_lwt.unix
+<example/*.ml{,i,y}>: pkg_mirage-block-unix
+<example/*.ml{,i,y}>: pkg_mirage-types
+<example/*.ml{,i,y}>: pkg_oUnit
+<example/*.ml{,i,y}>: pkg_sexplib
+<example/*.ml{,i,y}>: pkg_sexplib.syntax
+<example/*.ml{,i,y}>: use_shared_block_ring
+<example/main.{native,byte}>: custom
 # Executable test
 <lib_test/test.{native,byte}>: pkg_cstruct
 <lib_test/test.{native,byte}>: pkg_io-page

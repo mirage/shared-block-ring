@@ -19,3 +19,54 @@ module type BLOCK =
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
 
+module type RING = sig
+  type t
+  (* A ring containing variable-sized messages *)
+
+  type block
+  (* A block device *)
+
+  val attach: block -> [ `Ok of t | `Error of string ] Lwt.t
+  (** [attach blockdevice] attaches to a previously-created shared ring on top
+      of [blockdevice]. *)
+
+  type position with sexp_of
+  (** A position within the ring *)
+
+  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
+  (** [advance t position] exposes the item associated with [position] to
+      the Consumer so it can be [pop]ped. *)
+end
+
+module type PRODUCER = sig
+  include RING
+
+  val create: block -> [ `Ok of t | `Error of string ] Lwt.t
+  (** [create blockdevice] initialises a shared ring on top of [blockdevice]
+      where we will be able to [push] variable-sized items. *)
+
+  val push: t -> Cstruct.t -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
+  (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
+      the Consumer.
+      [`Ok position] means the update has been safely written to the block device
+      and can be exposed to the Consumer by calling [advance position].
+      [`TooBig] means the item is too big for the ring: we adopt the convention
+      that items must be written to the ring in one go
+      [`Retry] means that the item should fit but there is temporarily not
+      enough space in the ring. The client should retry later. *)
+end
+
+module type CONSUMER = sig
+  include RING
+
+  val pop: t -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  (** [pop t] returns a pair [(position * item)] where [item] is the next
+      item on the ring. Repeated calls to [pop t] will return the same [item].
+      To indicate that the item has been processed, call [advance position].
+      [`Retry] means there is no item available at the moment and the client should
+      try again later. *)
+
+  val peek: t -> position -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  (** [peek t position] behaves like [pop t] would after a call to [advance position]
+      i.e. it allows subsequent queue entries to be examined non-destructively. *)
+end

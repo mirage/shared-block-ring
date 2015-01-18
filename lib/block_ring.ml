@@ -1,5 +1,5 @@
 (*
- * Copyright (C) 2013 Citrix Systems Inc
+ * Copyright (C) 2013-2015 Citrix Systems Inc
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -144,6 +144,25 @@ module Producer(B: S.BLOCK) = struct
       sector;
     })
 
+  let attach device =
+    B.get_info device >>= fun info ->
+    let sector = alloc info.B.sector_size in
+    let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+      | `Ok x -> f x
+      | `Error x -> return (`Error x)
+      ) in
+    is_initialised device sector >>= function
+    | false -> return (`Error "block ring has not been initialised")
+    | true ->
+      get_producer device sector >>= fun producer ->
+      return (`Ok {
+        device;
+        info;
+        producer;
+        sector;
+        })
+
   let get_free_bytes t =
     let open C in
     get_consumer t.device t.sector >>= fun consumer ->
@@ -286,6 +305,8 @@ module Consumer(B: S.BLOCK) = struct
       let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (len)))) in
       return (`Ok (Int64.(add t.consumer needed_bytes),result))
     end
+
+  let peek t position = pop { t with consumer = position }
 
   let advance t consumer =
     let open C in

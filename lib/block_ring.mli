@@ -1,5 +1,5 @@
 (*
- * Copyright (C) 2013 Citrix Systems Inc
+ * Copyright (C) 2013-2015 Citrix Systems Inc
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -22,50 +22,10 @@
     the client to either poll for updates or implement another out-of-band
     signalling mechanism. *)
 
-module Producer(B: S.BLOCK): sig
-  type t
+module Producer(B: S.BLOCK):
+  S.PRODUCER
+    with type block := B.t
 
-  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
-  (** [create blockdevice] initialises a shared ring on top of [blockdevice]
-      where we will be able to [push] variable-sized items. *)
-
-  type position with sexp_of
-  (** A position within the ring *)
-
-  val push: t -> Cstruct.t -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
-  (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
-      the Consumer.
-      [`Ok position] means the update has been safely written to the block device
-        and can be exposed to the Consumer by calling [advance position].
-      [`TooBig] means the item is too big for the ring: we adopt the convention
-        that items must be written to the ring in one go
-      [`Retry] means that the item should fit but there is temporarily not
-        enough space in the ring. The client should retry later. *)
-
-  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
-  (** [advance t position] exposes the item associated with [position] to
-      the Consumer so it can be [pop]ped. *)
-end
-
-module Consumer(B: S.BLOCK): sig
-  type t
-
-  val attach: B.t -> [ `Ok of t | `Error of string ] Lwt.t
-  (** [create blockdevice] attaches to a previously-created shared ring on top
-      of [blockdevice]. *)
-
-  type position with sexp_of
-  (** A position within the ring *)
-
-  val pop: t -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
-  (** [pop t] returns a pair [(position * item)] where [item] is the next
-      item on the ring. Repeated calls to [pop t] will return the same [item].
-      To indicate that the item has been processed, call [advance position].
-      [`Retry] means there is no item available at the moment and the client should
-      try again later. *)
-
-  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
-  (** [advance t position] marks the item associated with [position] from a
-      previous call to [pop] as having been fully processed. When this thread
-      completes future calls to [pop] will return the next item. *)
-end
+module Consumer(B: S.BLOCK):
+  S.CONSUMER
+    with type block := B.t
