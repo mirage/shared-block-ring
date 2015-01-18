@@ -36,6 +36,11 @@ let zero buf =
     Cstruct.set_uint8 buf i 0
   done
 
+let alloc sector_size =
+  let page = Io_page.(to_cstruct (get 1)) in
+  let sector = Cstruct.sub page 0 sector_size in
+  sector
+
 module Common(B: S.BLOCK) = struct
   (* Convert the block errors *)
   let ( >>= ) m f = m >>= function
@@ -121,8 +126,9 @@ module Producer(B: S.BLOCK) = struct
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
 
-  let create device sector =
+  let create device =
     B.get_info device >>= fun info ->
+    let sector = alloc info.B.sector_size in
     let open C in
     let ( >>= ) m f = Lwt.bind m (function
     | `Ok x -> f x
@@ -152,7 +158,7 @@ module Producer(B: S.BLOCK) = struct
     let result = fn () in
     write realsector t.device t.sector >>= fun () ->
     return (`Ok result)
-    
+
   let unsafe_write t item =
     let open C in
     (* add a 4 byte header of size, and round up to the next 4-byte offset *)
@@ -165,7 +171,7 @@ module Producer(B: S.BLOCK) = struct
     read_modify_write t first_sector (fun () ->
       (* Write the header and anything else we can *)
       Cstruct.LE.set_uint32 t.sector first_offset (Int32.of_int (Cstruct.len item));
-      if first_offset + 4 = t.info.B.sector_size 
+      if first_offset + 4 = t.info.B.sector_size
       then item (* We can't write anything else, so just return the item *)
       else begin
         let this = min (t.info.B.sector_size - first_offset - 4) (Cstruct.len item) in
@@ -190,7 +196,7 @@ module Producer(B: S.BLOCK) = struct
     set_producer t.device t.sector new_producer >>= fun () ->
     t.producer <- new_producer;
     return (`Ok ())
-      
+
   let push t item =
     (* every item has a 4 byte header *)
     let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
@@ -214,8 +220,9 @@ module Consumer(B: S.BLOCK) = struct
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
 
-  let create device sector =
+  let create device =
     B.get_info device >>= fun info ->
+    let sector = alloc info.B.sector_size in
     let open C in
     let ( >>= ) m f = Lwt.bind m (function
     | `Ok x -> f x
@@ -277,4 +284,3 @@ module Consumer(B: S.BLOCK) = struct
     t.consumer <- consumer;
     return (`Ok ())
 end
-

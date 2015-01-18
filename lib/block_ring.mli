@@ -14,17 +14,27 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
+
+
 module Producer(B: S.BLOCK): sig
   type t
 
-  val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
+  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
+  (** [create blockdevice] initialises a shared ring on top of [blockdevice]
+      where we will be able to [push] variable-sized items. *)
+
   val push: t -> Cstruct.t -> [ `Ok of unit | `TooBig | `Retry | `Error of string ] Lwt.t
-end
+  (** [push t item] pushes [item] onto the ring [t], failing with [`TooBig] if
+      the item is too big to ever fit (we adopt the convention that items must
+      be written to the ring in one go) and [`Retry] means that there is
+      temporarily not enough space i.e. retry later when the consumer has
+      consumed some. *)
+  end
 
 module Consumer(B: S.BLOCK): sig
   type t
 
-  val create: B.t -> Cstruct.t -> [ `Ok of t | `Error of string ] Lwt.t
+  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
   val pop: t -> [ `Ok of Int64.t * Cstruct.t | `Retry | `Error of string ] Lwt.t
   val set_consumer: t -> Cstruct.uint64 -> [ `Ok of unit | `Error of string ] Lwt.t
 end
