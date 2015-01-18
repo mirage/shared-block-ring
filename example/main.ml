@@ -11,17 +11,95 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
+open Lwt
 
 let project_url = "http://github.com/djs55/shared-block-ring"
 
+module Producer = Block_ring.Producer(Block)
+module Consumer = Block_ring.Consumer(Block)
+
+let connect filename =
+  Block.connect filename
+  >>= function
+  | `Error _ -> fail (Failure (Printf.sprintf "Block.connect %s failed" filename))
+  | `Ok x -> return x
+
 let produce filename interval =
-  `Error(false, "Unimplemented")
+  let t =
+    connect filename
+    >>= fun b ->
+    Producer.attach b
+    >>= function
+    | `Error x -> fail (Failure x)
+    | `Ok p ->
+      let rec loop () =
+        Lwt_io.read_line Lwt_io.stdin
+        >>= fun line ->
+        let buf = Cstruct.create (String.length line) in
+        Cstruct.blit_from_string line 0 buf 0 (String.length line);
+        let rec write () =
+          Producer.push p buf
+          >>= function
+          | `TooBig -> fail (Failure "input data is too large for this ring")
+          | `Retry ->
+            Lwt_unix.sleep (float_of_int interval)
+            >>= fun () ->
+            write ()
+          | `Error msg -> fail (Failure msg)
+          | `Ok position ->
+            ( Producer.advance p position
+              >>= function
+              | `Error msg -> fail (Failure msg)
+              | `Ok () -> return () ) in
+        write ()
+        >>= fun () ->
+        loop () in
+      loop () in
+  try
+    `Ok (Lwt_main.run t)
+  with e ->
+    `Error(false, Printexc.to_string e)
 
 let consume filename interval =
-  `Error(false, "Unimplemented")
+  let t =
+    connect filename
+    >>= fun b ->
+    Consumer.attach b
+    >>= function
+    | `Error x -> fail (Failure x)
+    | `Ok c ->
+      let rec loop () =
+        Consumer.pop c
+        >>= function
+        | `Retry ->
+          Lwt_unix.sleep (float_of_int interval)
+          >>= fun () ->
+          loop ()
+        | `Error msg -> fail (Failure msg)
+        | `Ok(position, buf) ->
+          Lwt_io.write_line Lwt_io.stdout (Cstruct.to_string buf)
+          >>= fun () ->
+          ( Consumer.advance c position
+            >>= function
+            | `Error msg -> fail (Failure msg)
+            | `Ok () -> loop () ) in
+      loop () in
+  try
+    `Ok (Lwt_main.run t)
+  with e ->
+    `Error(false, Printexc.to_string e)
 
 let create filename =
-  `Error(false, "Unimplemented")
+  let t =
+    connect filename
+    >>= fun b ->
+    Producer.create b >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Producer.create %s: %s" filename x))
+    | `Ok _ -> return () in
+  try
+    `Ok (Lwt_main.run t)
+  with e ->
+    `Error(false, Printexc.to_string e)
 
 let diagnostics filename =
   `Error(false, "Unimplemented")
@@ -38,7 +116,7 @@ let help = [
 
 let filename =
   let doc = "Path to the device or file containing the ring." in
-  Arg.(value & pos 0 (some file) None & info [] ~doc)
+  Arg.(value & pos 0 file "test.raw" & info [] ~doc)
 
 let interval =
   let doc = "Time in seconds between I/O retries." in
