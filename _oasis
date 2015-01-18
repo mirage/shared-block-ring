@@ -14,6 +14,14 @@ Library shared_block_ring
   Modules:            Block_ring
   BuildDepends:       cstruct, lwt, lwt.unix, mirage-types, io-page, sexplib, sexplib.syntax
 
+Executable "shared-block-ring"
+  CompiledObject:     best
+  Path:               example
+  MainIs:             main.ml
+  Custom:             true
+  Install:            false
+  BuildDepends:       lwt, lwt.unix, mirage-block-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix, cmdliner
+
 Executable test
   CompiledObject:     best
   Path:               lib_test
