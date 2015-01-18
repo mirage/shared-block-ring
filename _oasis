@@ -12,7 +12,7 @@ Library shared_block_ring
   Path:               lib
   Findlibname:        shared-block-ring
   Modules:            Block_ring
-  BuildDepends:       cstruct, lwt, lwt.unix, mirage-types, io-page
+  BuildDepends:       cstruct, lwt, lwt.unix, mirage-types, io-page, sexplib, sexplib.syntax
 
 Executable test
   CompiledObject:     best

@@ -13,6 +13,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
+open Sexplib.Std
 open Lwt
 
 (* The format will be:
@@ -220,7 +221,7 @@ module Consumer(B: S.BLOCK) = struct
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
   }
 
-  let create device =
+  let attach device =
     B.get_info device >>= fun info ->
     let sector = alloc info.B.sector_size in
     let open C in
@@ -238,6 +239,8 @@ module Consumer(B: S.BLOCK) = struct
         consumer;
         sector;
       })
+
+  type position = int64 with sexp_of
 
   let pop t =
     let open C in
@@ -274,7 +277,7 @@ module Consumer(B: S.BLOCK) = struct
       return (`Ok (Int64.(add t.consumer needed_bytes),result))
     end
 
-  let set_consumer t consumer =
+  let advance t consumer =
     let open C in
     let ( >>= ) m f = Lwt.bind m (function
       | `Ok x -> f x

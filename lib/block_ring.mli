@@ -14,7 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-
+(** A producer/consumer ring on top of a shared block device. The producer may
+    push variable-sized items (if there is enough space) and the consumer may
+    then pop the items. Items are pushed and popped atomically. There should
+    be at-most-one producer and at-most-one consumer at any point in time.
+    Since block devices have no built-in signalling mechanisms, it is up to
+    the client to either poll for updates or implement another out-of-band
+    signalling mechanism. *)
 
 module Producer(B: S.BLOCK): sig
   type t
@@ -24,17 +30,33 @@ module Producer(B: S.BLOCK): sig
       where we will be able to [push] variable-sized items. *)
 
   val push: t -> Cstruct.t -> [ `Ok of unit | `TooBig | `Retry | `Error of string ] Lwt.t
-  (** [push t item] pushes [item] onto the ring [t], failing with [`TooBig] if
-      the item is too big to ever fit (we adopt the convention that items must
-      be written to the ring in one go) and [`Retry] means that there is
-      temporarily not enough space i.e. retry later when the consumer has
-      consumed some. *)
+  (** [push t item] pushes [item] onto the ring [t].
+      [`Ok ()] means the update has been safely written to the block device.
+      [`TooBig] means the item is too big for the ring: we adopt the convention
+        that items must be written to the ring in one go
+      [`Retry] means that the item should fit but there is temporarily not
+        enough space in the ring. The client should retry later. *)
   end
 
 module Consumer(B: S.BLOCK): sig
   type t
 
-  val create: B.t -> [ `Ok of t | `Error of string ] Lwt.t
-  val pop: t -> [ `Ok of Int64.t * Cstruct.t | `Retry | `Error of string ] Lwt.t
-  val set_consumer: t -> Cstruct.uint64 -> [ `Ok of unit | `Error of string ] Lwt.t
+  val attach: B.t -> [ `Ok of t | `Error of string ] Lwt.t
+  (** [create blockdevice] attaches to a previously-created shared ring on top
+      of [blockdevice]. *)
+
+  type position with sexp_of
+  (** A position within the ring *)
+
+  val pop: t -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  (** [pop t] returns a pair [(position * item)] where [item] is the next
+      item on the ring. Repeated calls to [pop t] will return the same [item].
+      To indicate that the item has been processed, call [advance position].
+      [`Retry] means there is no item available at the moment and the client should
+      try again later. *)
+
+  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
+  (** [advance t position] marks the item associated with [position] from a
+      previous call to [pop] as having been fully processed. When this thread
+      completes future calls to [pop] will return the next item. *)
 end
