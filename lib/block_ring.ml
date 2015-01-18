@@ -144,6 +144,25 @@ module Producer(B: S.BLOCK) = struct
       sector;
     })
 
+  let attach device =
+    B.get_info device >>= fun info ->
+    let sector = alloc info.B.sector_size in
+    let open C in
+    let ( >>= ) m f = Lwt.bind m (function
+      | `Ok x -> f x
+      | `Error x -> return (`Error x)
+      ) in
+    is_initialised device sector >>= function
+    | false -> return (`Error "block ring has not been initialised")
+    | true ->
+      get_producer device sector >>= fun producer ->
+      return (`Ok {
+        device;
+        info;
+        producer;
+        sector;
+        })
+
   let get_free_bytes t =
     let open C in
     get_consumer t.device t.sector >>= fun consumer ->

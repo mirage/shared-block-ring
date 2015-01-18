@@ -19,3 +19,21 @@ module type BLOCK =
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
 
+module type RING = sig
+  type t
+  (* A ring containing variable-sized messages *)
+
+  type block
+  (* A block device *)
+
+  val attach: block -> [ `Ok of t | `Error of string ] Lwt.t
+  (** [attach blockdevice] attaches to a previously-created shared ring on top
+      of [blockdevice]. *)
+
+  type position with sexp_of
+  (** A position within the ring *)
+
+  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
+  (** [advance t position] exposes the item associated with [position] to
+      the Consumer so it can be [pop]ped. *)
+end
