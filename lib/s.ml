@@ -65,4 +65,8 @@ module type CONSUMER = sig
       To indicate that the item has been processed, call [advance position].
       [`Retry] means there is no item available at the moment and the client should
       try again later. *)
+
+  val peek: t -> position -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  (** [peek t position] behaves like [pop t] would after a call to [advance position]
+      i.e. it allows subsequent queue entries to be examined non-destructively. *)
 end

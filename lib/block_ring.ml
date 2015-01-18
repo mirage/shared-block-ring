@@ -306,6 +306,8 @@ module Consumer(B: S.BLOCK) = struct
       return (`Ok (Int64.(add t.consumer needed_bytes),result))
     end
 
+  let peek t position = pop { t with consumer = position }
+
   let advance t consumer =
     let open C in
     let ( >>= ) m f = Lwt.bind m (function

@@ -102,7 +102,41 @@ let create filename =
     `Error(false, Printexc.to_string e)
 
 let diagnostics filename =
-  `Error(false, "Unimplemented")
+  let t =
+    connect filename
+    >>= fun b ->
+    Consumer.attach b
+    >>= function
+    | `Error x -> fail (Failure x)
+    | `Ok c ->
+      let item = function
+      | `Retry ->
+        Lwt_io.write_line Lwt_io.stdout "-- there are no more items"
+        >>= fun () ->
+        return None
+      | `Error msg -> fail (Failure msg)
+      | `Ok (position, buf) ->
+        Lwt_io.write_line Lwt_io.stdout (Printf.sprintf "%s: %s" (Sexplib.Sexp.to_string (Consumer.sexp_of_position position)) (Cstruct.to_string buf))
+        >>= fun () ->
+        return (Some position) in
+      Consumer.pop c
+      >>= fun i ->
+      item i
+      >>= function
+      | None -> return ()
+      | Some pos ->
+        let rec loop pos =
+          Consumer.peek c pos
+          >>= fun i ->
+          item i
+          >>= function
+          | None -> return ()
+          | Some pos -> loop pos in
+        loop pos in
+  try
+    `Ok (Lwt_main.run t)
+  with e ->
+    `Error(false, Printexc.to_string e)
 
 open Cmdliner
 
