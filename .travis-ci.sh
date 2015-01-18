@@ -1,6 +1,6 @@
 ## declare required packages
 
-OPAM_PACKAGES="mirage-block-unix mirage-unix ounit lwt"
+OPAM_PACKAGES="mirage-block-unix mirage-unix ounit lwt sexplib"
 
 ## different PPAs required to cover the test matrix
 
