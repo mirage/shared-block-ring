@@ -16,9 +16,7 @@
 
 open Lwt
 open OUnit
-
-module Producer = Block_ring.Producer(Block)
-module Consumer = Block_ring.Consumer(Block)
+open Block_ring_unix
 
 let find_unused_file () =
   (* Find a filename which doesn't exist *)
@@ -91,13 +89,10 @@ let test_push_pop length batch () =
     let message = "All work and no play makes Dave a dull boy.\n" in
     fill_with_message payload message;
 
-    Block.connect name >>= function
-    | `Error _ -> failwith (Printf.sprintf "Block.connect %s failed" name)
-    | `Ok device ->
-    Producer.create device >>= function
+    Producer.create name >>= function
     | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
     | `Ok producer ->
-    Consumer.attach device >>= function
+    Consumer.attach name >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
     | `Ok consumer ->
     let rec loop = function

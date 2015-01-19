@@ -12,23 +12,13 @@
  * GNU Lesser General Public License for more details.
  *)
 open Lwt
+open Block_ring_unix
 
 let project_url = "http://github.com/djs55/shared-block-ring"
 
-module Producer = Block_ring.Producer(Block)
-module Consumer = Block_ring.Consumer(Block)
-
-let connect filename =
-  Block.connect filename
-  >>= function
-  | `Error _ -> fail (Failure (Printf.sprintf "Block.connect %s failed" filename))
-  | `Ok x -> return x
-
 let produce filename interval =
   let t =
-    connect filename
-    >>= fun b ->
-    Producer.attach b
+    Producer.attach filename
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok p ->
@@ -62,9 +52,7 @@ let produce filename interval =
 
 let consume filename interval =
   let t =
-    connect filename
-    >>= fun b ->
-    Consumer.attach b
+    Consumer.attach filename
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok c ->
@@ -91,9 +79,7 @@ let consume filename interval =
 
 let create filename =
   let t =
-    connect filename
-    >>= fun b ->
-    Producer.create b >>= function
+    Producer.create filename >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Producer.create %s: %s" filename x))
     | `Ok _ -> return () in
   try
@@ -103,9 +89,7 @@ let create filename =
 
 let diagnostics filename =
   let t =
-    connect filename
-    >>= fun b ->
-    Consumer.attach b
+    Consumer.attach filename
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok c ->
