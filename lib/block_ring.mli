@@ -24,8 +24,8 @@
 
 module Producer(B: S.BLOCK):
   S.PRODUCER
-    with type block := B.t
+    with type disk := B.t
 
 module Consumer(B: S.BLOCK):
   S.CONSUMER
-    with type block := B.t
+    with type disk := B.t
