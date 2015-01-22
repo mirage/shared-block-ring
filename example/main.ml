@@ -57,7 +57,7 @@ let consume filename interval =
     | `Error x -> fail (Failure x)
     | `Ok c ->
       let rec loop () =
-        Consumer.pop c
+        Consumer.pop ~t:c ()
         >>= function
         | `Retry ->
           Lwt_unix.sleep (float_of_int interval)
@@ -103,14 +103,14 @@ let diagnostics filename =
         Lwt_io.write_line Lwt_io.stdout (Printf.sprintf "%s: %s" (Sexplib.Sexp.to_string (Consumer.sexp_of_position position)) (Cstruct.to_string buf))
         >>= fun () ->
         return (Some position) in
-      Consumer.pop c
+      Consumer.pop ~t:c ()
       >>= fun i ->
       item i
       >>= function
       | None -> return ()
       | Some pos ->
         let rec loop pos =
-          Consumer.peek c pos
+          Consumer.pop ~t:c ~from:pos ()
           >>= fun i ->
           item i
           >>= function

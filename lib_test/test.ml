@@ -98,7 +98,7 @@ let test_push_pop length batch () =
     let rec loop = function
       | 0 -> return ()
       | n ->
-        Consumer.pop consumer >>= function
+        Consumer.pop ~t:consumer () >>= function
         | `Ok _ | `Error _ -> failwith "empty pop"
         | `Retry ->
         let rec push = function
@@ -116,7 +116,7 @@ let test_push_pop length batch () =
         let rec pop = function
         | 0 -> return ()
         | m ->
-          Consumer.pop consumer >>= function
+          Consumer.pop ~t:consumer () >>= function
           | `Error _ | `Retry -> failwith "pop"
           | `Ok (consumer_val,buffer) ->
             assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;

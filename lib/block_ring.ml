@@ -306,7 +306,14 @@ module Consumer(B: S.BLOCK) = struct
       return (`Ok (Int64.(add t.consumer needed_bytes),result))
     end
 
-  let peek t position = pop { t with consumer = position }
+  let pop ~t ?(from = t.consumer) () = pop { t with consumer = from }
+
+  let rec fold ~f ~t ?(from = t.consumer) ~init:acc () =
+    pop ~t ~from ()
+    >>= function
+    | `Error msg -> return (`Error msg)
+    | `Retry -> return (`Ok (from, acc))
+    | `Ok (from, x) -> fold ~f ~t ~from ~init:(f x acc) ()
 
   let advance t consumer =
     let open C in

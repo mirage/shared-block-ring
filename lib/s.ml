@@ -59,14 +59,17 @@ end
 module type CONSUMER = sig
   include RING
 
-  val pop: t -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
-  (** [pop t] returns a pair [(position * item)] where [item] is the next
-      item on the ring. Repeated calls to [pop t] will return the same [item].
+  val pop: t:t -> ?from:position -> unit -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  (** [peek t ?position ()] returns a pair [(position, item)] where [item] is the
+      next item on the ring after [from]. Repeated calls to [pop] will return the
+      same [item].
       To indicate that the item has been processed, call [advance position].
       [`Retry] means there is no item available at the moment and the client should
       try again later. *)
 
-  val peek: t -> position -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
-  (** [peek t position] behaves like [pop t] would after a call to [advance position]
-      i.e. it allows subsequent queue entries to be examined non-destructively. *)
+  val fold: f:(Cstruct.t -> 'a -> 'a) -> t:t -> ?from:position -> init:'a -> unit -> [ `Ok of (position * 'a) | `Error of string ] Lwt.t
+  (** [peek_all f t ?position init ()] folds [f] across all the values that can be
+      immediately [peek]ed from the ring. If any of the [fold] operations fail
+      then the whole operation fails. The successful result includes the final
+      [position] which can be used to consume all the items at once. *)
 end

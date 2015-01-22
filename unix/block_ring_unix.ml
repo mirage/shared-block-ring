@@ -54,6 +54,6 @@ module Consumer = struct
     BlockConsumer.attach block
 
   let pop = BlockConsumer.pop
-  let peek = BlockConsumer.peek
+  let fold = BlockConsumer.fold
   let advance = BlockConsumer.advance
 end
