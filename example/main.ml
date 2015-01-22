@@ -18,7 +18,7 @@ let project_url = "http://github.com/djs55/shared-block-ring"
 
 let produce filename interval =
   let t =
-    Producer.attach filename
+    Producer.attach ~disk:filename ()
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok p ->
@@ -28,7 +28,7 @@ let produce filename interval =
         let buf = Cstruct.create (String.length line) in
         Cstruct.blit_from_string line 0 buf 0 (String.length line);
         let rec write () =
-          Producer.push p buf
+          Producer.push ~t:p ~item:buf ()
           >>= function
           | `TooBig -> fail (Failure "input data is too large for this ring")
           | `Retry ->
@@ -37,7 +37,7 @@ let produce filename interval =
             write ()
           | `Error msg -> fail (Failure msg)
           | `Ok position ->
-            ( Producer.advance p position
+            ( Producer.advance ~t:p ~position ()
               >>= function
               | `Error msg -> fail (Failure msg)
               | `Ok () -> return () ) in
@@ -52,7 +52,7 @@ let produce filename interval =
 
 let consume filename interval =
   let t =
-    Consumer.attach filename
+    Consumer.attach ~disk:filename ()
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok c ->
@@ -67,7 +67,7 @@ let consume filename interval =
         | `Ok(position, buf) ->
           Lwt_io.write_line Lwt_io.stdout (Cstruct.to_string buf)
           >>= fun () ->
-          ( Consumer.advance c position
+          ( Consumer.advance ~t:c ~position ()
             >>= function
             | `Error msg -> fail (Failure msg)
             | `Ok () -> loop () ) in
@@ -79,7 +79,7 @@ let consume filename interval =
 
 let create filename =
   let t =
-    Producer.create filename >>= function
+    Producer.create ~disk:filename () >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Producer.create %s: %s" filename x))
     | `Ok _ -> return () in
   try
@@ -89,7 +89,7 @@ let create filename =
 
 let diagnostics filename =
   let t =
-    Consumer.attach filename
+    Consumer.attach ~disk:filename ()
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok c ->

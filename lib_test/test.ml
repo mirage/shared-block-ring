@@ -89,10 +89,13 @@ let test_push_pop length batch () =
     let message = "All work and no play makes Dave a dull boy.\n" in
     fill_with_message payload message;
 
-    Producer.create name >>= function
+    Producer.create ~disk:name () >>= function
     | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
+    | `Ok () ->
+    Producer.attach ~disk:name () >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.attach %s" name)
     | `Ok producer ->
-    Consumer.attach name >>= function
+    Consumer.attach ~disk:name () >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
     | `Ok consumer ->
     let rec loop = function
@@ -104,10 +107,10 @@ let test_push_pop length batch () =
         let rec push = function
         | 0 -> return ()
         | m ->
-          Producer.push producer payload >>= function
+          Producer.push ~t:producer ~item:payload () >>= function
           | `Error _ | `TooBig | `Retry -> failwith "push"
           | `Ok position ->
-            (Producer.advance producer position >>= function
+            (Producer.advance ~t:producer ~position () >>= function
               | `Error x -> failwith "Producer.advance"
               | `Ok () -> return ()
             ) >>= fun () ->
@@ -120,7 +123,7 @@ let test_push_pop length batch () =
           | `Error _ | `Retry -> failwith "pop"
           | `Ok (consumer_val,buffer) ->
             assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
-	    Consumer.advance consumer consumer_val >>= function
+	    Consumer.advance ~t:consumer ~position:consumer_val () >>= function
 	    | `Ok () ->
               pop (m - 1)
 	    | `Error _ -> failwith "pop" in
@@ -130,11 +133,11 @@ let test_push_pop length batch () =
     loop Int64.(to_int (mul 2L (div size 512L))) >>= fun () ->
     (* count how many items we can push in total *)
     let rec loop acc =
-      Producer.push producer payload >>= function
+      Producer.push ~t:producer ~item:payload () >>= function
       | `Retry -> return acc
       | `Error _ | `TooBig -> failwith "counting the number of pushes"
       | `Ok position ->
-        (Producer.advance producer position >>= function
+        (Producer.advance ~t:producer ~position () >>= function
         | `Error x -> failwith "Producer.advance"
         | `Ok () -> return ()
         ) >>= fun () ->

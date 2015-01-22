@@ -23,17 +23,21 @@ module type RING = sig
   type t
   (* A ring containing variable-sized messages *)
 
-  type block
+  type disk
   (* A block device *)
 
-  val attach: block -> [ `Ok of t | `Error of string ] Lwt.t
+  val attach: disk:disk -> unit -> [ `Ok of t | `Error of string ] Lwt.t
   (** [attach blockdevice] attaches to a previously-created shared ring on top
       of [blockdevice]. *)
+
+  val detach: t -> unit Lwt.t
+  (** [detach t] frees all resources associated with [t]. Attempts to use [t]
+      after a detach will result in an [`Error _] *)
 
   type position with sexp_of
   (** A position within the ring *)
 
-  val advance: t -> position -> [ `Ok of unit | `Error of string ] Lwt.t
+  val advance: t:t -> position:position -> unit -> [ `Ok of unit | `Error of string ] Lwt.t
   (** [advance t position] exposes the item associated with [position] to
       the Consumer so it can be [pop]ped. *)
 end
@@ -41,11 +45,11 @@ end
 module type PRODUCER = sig
   include RING
 
-  val create: block -> [ `Ok of t | `Error of string ] Lwt.t
+  val create: disk:disk -> unit -> [ `Ok of unit | `Error of string ] Lwt.t
   (** [create blockdevice] initialises a shared ring on top of [blockdevice]
       where we will be able to [push] variable-sized items. *)
 
-  val push: t -> Cstruct.t -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
+  val push: t:t -> item:Cstruct.t -> unit -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
   (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
       the Consumer.
       [`Ok position] means the update has been safely written to the block device
