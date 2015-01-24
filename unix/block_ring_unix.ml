@@ -18,8 +18,8 @@ open Lwt
 let connect filename =
   Block.connect filename
   >>= function
-  | `Error _ -> fail (Failure (Printf.sprintf "Block.connect %s failed" filename))
-  | `Ok x -> return x
+  | `Error _ -> return (`Error (Printf.sprintf "Block.connect %s failed" filename))
+  | `Ok x -> return (`Ok x)
 
 module Producer = struct
   module BlockProducer = Block_ring.Producer(Block)
@@ -32,7 +32,9 @@ module Producer = struct
 
   let create ~disk:filename () =
     connect filename
-    >>= fun disk ->
+    >>= function
+    | `Error x -> return (`Error x)
+    | `Ok disk ->
     BlockProducer.create ~disk ()
     >>= function
     | `Error x ->
@@ -46,7 +48,9 @@ module Producer = struct
 
   let attach ~disk:filename () =
     connect filename
-    >>= fun disk ->
+    >>= function
+    | `Error x -> return (`Error x)
+    | `Ok disk ->
     BlockProducer.attach ~disk ()
     >>= function
     | `Error x ->
@@ -86,7 +90,9 @@ module Consumer = struct
 
   let attach ~disk:filename () =
     connect filename
-    >>= fun disk ->
+    >>= function
+    | `Error x -> return (`Error x)
+    | `Ok disk ->
     BlockConsumer.attach ~disk ()
     >>= function
     | `Error x ->
