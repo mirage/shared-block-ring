@@ -1,13 +1,13 @@
 # OASIS_START
-# DO NOT EDIT (digest: 15459e9563ec8e85d58a1f514791851c)
+# DO NOT EDIT (digest: a85d96c4af7547c4f8e2b202a1c3897c)
 version = "0.9.0"
 description = "Simple persistent queue over a block device"
 requires = "cstruct lwt mirage-types io-page sexplib sexplib.syntax"
-archive(byte) = "shared_block_ring.cma"
-archive(byte, plugin) = "shared_block_ring.cma"
-archive(native) = "shared_block_ring.cmxa"
-archive(native, plugin) = "shared_block_ring.cmxs"
-exists_if = "shared_block_ring.cma"
+archive(byte) = "shared_block.cma"
+archive(byte, plugin) = "shared_block.cma"
+archive(native) = "shared_block.cmxa"
+archive(native, plugin) = "shared_block.cmxs"
+exists_if = "shared_block.cma"
 package "unix" (
  version = "0.9.0"
  description = "Simple persistent queue over a block device"
