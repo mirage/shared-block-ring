@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: 34ed5b7cd7fb4157cc836cdc5bbb46d4)
+# DO NOT EDIT (digest: ceaef0bd0afc71b7167b1992abda48bf)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -14,8 +14,12 @@ true: annot, bin_annot
 ".git": not_hygienic
 "_darcs": -traverse
 "_darcs": not_hygienic
-# Library shared_block_ring
-"lib/shared_block_ring.cmxs": use_shared_block_ring
+# Library shared_block
+"lib/shared_block.cmxs": use_shared_block
+"lib/ring.cmx": for-pack(Shared_block)
+"lib/journal.cmx": for-pack(Shared_block)
+"lib/log.cmx": for-pack(Shared_block)
+"lib/s.cmx": for-pack(Shared_block)
 <lib/*.ml{,i,y}>: pkg_cstruct
 <lib/*.ml{,i,y}>: pkg_io-page
 <lib/*.ml{,i,y}>: pkg_lwt
@@ -33,7 +37,7 @@ true: annot, bin_annot
 <unix/*.ml{,i,y}>: pkg_mirage-types
 <unix/*.ml{,i,y}>: pkg_sexplib
 <unix/*.ml{,i,y}>: pkg_sexplib.syntax
-<unix/*.ml{,i,y}>: use_shared_block_ring
+<unix/*.ml{,i,y}>: use_shared_block
 # Executable shared-block-ring
 <example/main.{native,byte}>: pkg_cmdliner
 <example/main.{native,byte}>: pkg_cstruct
@@ -46,7 +50,7 @@ true: annot, bin_annot
 <example/main.{native,byte}>: pkg_oUnit
 <example/main.{native,byte}>: pkg_sexplib
 <example/main.{native,byte}>: pkg_sexplib.syntax
-<example/main.{native,byte}>: use_shared_block_ring
+<example/main.{native,byte}>: use_shared_block
 <example/main.{native,byte}>: use_shared_block_ring_unix
 <example/*.ml{,i,y}>: pkg_cmdliner
 <example/*.ml{,i,y}>: pkg_cstruct
@@ -59,7 +63,7 @@ true: annot, bin_annot
 <example/*.ml{,i,y}>: pkg_oUnit
 <example/*.ml{,i,y}>: pkg_sexplib
 <example/*.ml{,i,y}>: pkg_sexplib.syntax
-<example/*.ml{,i,y}>: use_shared_block_ring
+<example/*.ml{,i,y}>: use_shared_block
 <example/*.ml{,i,y}>: use_shared_block_ring_unix
 <example/main.{native,byte}>: custom
 # Executable test
@@ -73,7 +77,7 @@ true: annot, bin_annot
 <lib_test/test.{native,byte}>: pkg_oUnit
 <lib_test/test.{native,byte}>: pkg_sexplib
 <lib_test/test.{native,byte}>: pkg_sexplib.syntax
-<lib_test/test.{native,byte}>: use_shared_block_ring
+<lib_test/test.{native,byte}>: use_shared_block
 <lib_test/test.{native,byte}>: use_shared_block_ring_unix
 <lib_test/*.ml{,i,y}>: pkg_cstruct
 <lib_test/*.ml{,i,y}>: pkg_io-page
@@ -85,7 +89,7 @@ true: annot, bin_annot
 <lib_test/*.ml{,i,y}>: pkg_oUnit
 <lib_test/*.ml{,i,y}>: pkg_sexplib
 <lib_test/*.ml{,i,y}>: pkg_sexplib.syntax
-<lib_test/*.ml{,i,y}>: use_shared_block_ring
+<lib_test/*.ml{,i,y}>: use_shared_block
 <lib_test/*.ml{,i,y}>: use_shared_block_ring_unix
 <lib_test/test.{native,byte}>: custom
 # OASIS_STOP
