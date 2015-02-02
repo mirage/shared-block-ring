@@ -77,3 +77,34 @@ module type CONSUMER = sig
       then the whole operation fails. The successful result includes the final
       [position] which can be used to consume all the items at once. *)
 end
+
+
+module type CSTRUCTABLE = sig
+  type t
+  (** Something that can be read from and written to a Cstruct.t *)
+
+  val to_cstruct: t -> Cstruct.t
+  val of_cstruct: Cstruct.t -> t
+end
+
+module type JOURNAL = sig
+  type t
+  (** A journal kept on disk of work we need to perform *)
+
+  type disk
+  (** The disk where we will keep our records. This should persist over a crash. *)
+
+  type operation
+  (** An idempotent operation which we will perform at-least-once *)
+
+  val start: disk -> (operation -> unit Lwt.t) -> t Lwt.t
+  (** Start a journal replay thread on a given disk, with the given processing
+      function which will be applied at-least-once to every item in the journal. *)
+
+  val shutdown: t -> unit Lwt.t
+  (** Shut down a journal replay thread *)
+
+  val push: t -> operation -> unit Lwt.t
+  (** Append an operation to the journal. When this returns, the operation will
+      be performed at-least-once before any later items are performed. *)
+end

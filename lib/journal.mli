@@ -14,14 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-(** A producer/consumer ring on top of a shared block device or a file.
-    The producer may push variable-sized items (if there is enough space) and
-    the consumer may then pop the items. Items are pushed and popped atomically.
-    There should be at-most-one producer and at-most-one consumer at any point
-    in time. Since block devices have no built-in signalling mechanisms, it is
-    up to the client to either poll for updates or implement another out-of-band
-    signalling mechanism. *)
-
-module Producer: S.PRODUCER with type disk = string
-
-module Consumer: S.CONSUMER with type disk = string
+module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer.disk)(Operation: S.CSTRUCTABLE) :
+  S.JOURNAL
+    with type disk := Producer.disk
+     and type operation := Operation.t
+(** Create a journal from a pair of producer and consumer rings connected
+    in loopback. XXX: it is possible to provide an unrelated set of rings
+    which is obviously nonsensical *)

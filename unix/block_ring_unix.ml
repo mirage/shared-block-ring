@@ -22,7 +22,9 @@ let connect filename =
   | `Ok x -> return (`Ok x)
 
 module Producer = struct
-  module BlockProducer = Block_ring.Producer(Block)
+  module BlockProducer = Shared_block.Ring.Producer(Block)
+
+  type disk = string
 
   type t = {
     bp: BlockProducer.t;
@@ -80,7 +82,9 @@ module Producer = struct
 end
 
 module Consumer = struct
-  module BlockConsumer = Block_ring.Consumer(Block)
+  module BlockConsumer = Shared_block.Ring.Consumer(Block)
+
+  type disk = string
 
   type t = {
     bc: BlockConsumer.t;
