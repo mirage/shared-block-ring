@@ -26,7 +26,13 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
        info "There are %d items in the journal to replay" (List.length items);
        Lwt_list.iter_p
          (fun item ->
-           t.perform (Op.of_cstruct item)
+           Lwt.catch
+             (fun () ->
+               t.perform (Op.of_cstruct item)
+             ) (fun e ->
+               error "Failed to process journal item: %s" (Printexc.to_string e);
+               fail e
+             )
          ) items
        >>= fun () ->
        ( Consumer.advance ~t:t.c ~position ()
