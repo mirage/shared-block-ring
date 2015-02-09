@@ -84,7 +84,7 @@ module type CSTRUCTABLE = sig
   (** Something that can be read from and written to a Cstruct.t *)
 
   val to_cstruct: t -> Cstruct.t
-  val of_cstruct: Cstruct.t -> t
+  val of_cstruct: Cstruct.t -> t option
 end
 
 module type JOURNAL = sig
