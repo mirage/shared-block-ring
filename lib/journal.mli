@@ -14,7 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer.disk)(Operation: S.CSTRUCTABLE) :
+module Make
+  (Producer: S.PRODUCER
+     with type position = int64)
+  (Consumer: S.CONSUMER
+     with type disk = Producer.disk
+      and type position = int64)
+  (Operation: S.CSTRUCTABLE) :
   S.JOURNAL
     with type disk := Producer.disk
      and type operation := Operation.t

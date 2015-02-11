@@ -2,7 +2,13 @@ open Lwt
 open Sexplib.Std
 open Log
 
-module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer.disk)(Op: S.CSTRUCTABLE) = struct
+module Make
+  (Producer: S.PRODUCER
+    with type position = int64)
+  (Consumer: S.CONSUMER
+    with type disk = Producer.disk
+     and type position = int64)
+  (Op: S.CSTRUCTABLE) = struct
 
   type t = {
     p: Producer.t;
@@ -11,6 +17,7 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
     cvar: unit Lwt_condition.t;
     mutable please_shutdown: bool;
     mutable shutdown_complete: bool;
+    mutable consumed: int64;
     perform: Op.t -> unit Lwt.t;
   }
 
@@ -78,7 +85,9 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
     let please_shutdown = false in
     let shutdown_complete = false in
     let cvar = Lwt_condition.create () in
-    let t = { p; c; filename; please_shutdown; shutdown_complete; cvar; perform } in
+    let consumed = 0L in
+    let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
+              consumed; perform } in
     replay t
     >>= fun () ->
     (* Run a background thread processing items from the journal *)
@@ -137,6 +146,15 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
              fail (Failure msg)
            | `Ok () ->
              Lwt_condition.broadcast t.cvar ();
-             return () )
+             (* Some clients want to know when the item has been processed
+                i.e. when the consumer is > position *)
+             let rec wait () =
+               if t.consumed > position
+               then return ()
+               else
+                 Lwt_condition.wait t.cvar
+                 >>= fun () ->
+                 wait () in
+             return wait )
     end
 end

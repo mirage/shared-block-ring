@@ -104,7 +104,9 @@ module type JOURNAL = sig
   val shutdown: t -> unit Lwt.t
   (** Shut down a journal replay thread *)
 
-  val push: t -> operation -> unit Lwt.t
+  val push: t -> operation -> (unit -> unit Lwt.t) Lwt.t
   (** Append an operation to the journal. When this returns, the operation will
-      be performed at-least-once before any later items are performed. *)
+      be performed at-least-once before any later items are performed.
+      If a client needs to wait for the operation to be completed then call
+      the returned thunk and wait for the resulting thread. *)
 end
