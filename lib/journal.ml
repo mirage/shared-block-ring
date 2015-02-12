@@ -2,15 +2,21 @@ open Lwt
 open Sexplib.Std
 open Log
 
-module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer.disk)(Op: S.CSTRUCTABLE) = struct
+module Make
+  (Block: S.BLOCK)
+  (Op: S.CSTRUCTABLE) = struct
+
+  module R = Ring.Make(Block)
+  open R
 
   type t = {
     p: Producer.t;
     c: Consumer.t;
-    filename: Producer.disk;
+    filename: Block.t;
     cvar: unit Lwt_condition.t;
     mutable please_shutdown: bool;
     mutable shutdown_complete: bool;
+    mutable consumed: Consumer.position option;
     perform: Op.t -> unit Lwt.t;
   }
 
@@ -45,6 +51,7 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
            error "In replay, failed to advance consumer: %s" msg;
            fail (Failure msg)
          | `Ok () ->
+           t.consumed <- Some position;
            (* wake up anyone stuck in a `Retry loop *)
            Lwt_condition.broadcast t.cvar ();
            return () )
@@ -78,7 +85,9 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
     let please_shutdown = false in
     let shutdown_complete = false in
     let cvar = Lwt_condition.create () in
-    let t = { p; c; filename; please_shutdown; shutdown_complete; cvar; perform } in
+    let consumed = None in
+    let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
+              consumed; perform } in
     replay t
     >>= fun () ->
     (* Run a background thread processing items from the journal *)
@@ -137,6 +146,22 @@ module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer
              fail (Failure msg)
            | `Ok () ->
              Lwt_condition.broadcast t.cvar ();
-             return () )
+             (* Some clients want to know when the item has been processed
+                i.e. when the consumer is > position *)
+             let has_consumed () = match t.consumed with
+             | None -> false
+             | Some c ->
+               begin match Consumer.compare c position with
+               | `GreaterThan | `Equal -> true
+               | `LessThan -> false
+               end in
+             let rec wait () =
+               if has_consumed ()
+               then return ()
+               else
+                 Lwt_condition.wait t.cvar
+                 >>= fun () ->
+                 wait () in
+             return wait )
     end
 end

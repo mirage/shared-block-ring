@@ -14,10 +14,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module Make(Producer: S.PRODUCER)(Consumer: S.CONSUMER with type disk = Producer.disk)(Operation: S.CSTRUCTABLE) :
-  S.JOURNAL
-    with type disk := Producer.disk
-     and type operation := Operation.t
-(** Create a journal from a pair of producer and consumer rings connected
-    in loopback. XXX: it is possible to provide an unrelated set of rings
-    which is obviously nonsensical *)
+module Make(Block: S.BLOCK)(Operation: S.CSTRUCTABLE): S.JOURNAL
+  with type disk := Block.t
+   and type operation := Operation.t
+(** Create a journal from a block device. Descriptions of idempotent operations
+    may be pushed to the journal, and we guarantee to perform them at-least-once
+    in the order they were pushed provided the block device is available. If
+    the program crashes, the journal replay will be started when the program
+    restarts. *)

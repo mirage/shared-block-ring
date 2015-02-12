@@ -22,6 +22,8 @@
     up to the client to either poll for updates or implement another out-of-band
     signalling mechanism. *)
 
-module Producer: Shared_block.S.PRODUCER with type disk = string
+module Producer: Shared_block.S.PRODUCER
+  with type disk = string
 
-module Consumer: Shared_block.S.CONSUMER with type disk = string
+module Consumer: Shared_block.S.CONSUMER
+  with type disk = string
