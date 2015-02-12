@@ -148,6 +148,39 @@ let test_push_pop length batch () =
     return () in
   Lwt_main.run t
 
+let test_journal () =
+  let t =
+    let name = find_unused_file () in
+    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
+    let size = 16384L in
+    (* Write the last sector to make sure the file has the intended size *)
+    Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
+    let sector = alloc 512 in
+    fill_with_message sector "\xde\xead\xbe\xef";
+    Block.really_write fd sector >>= fun () ->
+
+    ( Block.connect name
+      >>= function
+      | `Ok x -> return x
+      | `Error _ -> failwith "Block.connect"
+    ) >>= fun device ->
+    let module Op = struct
+      type t = unit
+      let to_cstruct () = Cstruct.create 0
+      let of_cstruct _ = Some ()
+    end in
+    let module J = Shared_block.Journal.Make(Block)(Op) in
+    let perform () =
+      return () in
+    J.start device perform
+    >>= fun j ->
+    J.push j ()
+    >>= fun wait ->
+    wait ()
+    >>= fun () ->
+    return () in
+  Lwt_main.run t
+
 let rec allpairs xs ys = match xs with
   | [] -> []
   | x :: xs -> List.map (fun y -> x, y) ys @ (allpairs xs ys)
@@ -164,5 +197,6 @@ let _ =
   ) (allpairs interesting_lengths interesting_batch_sizes) in
 
   let suite = "shared-block-ring" >::: [
+    "test journal" >:: test_journal;
   ] @ test_push_pops in
   run_test_tt ~verbose:!verbose suite
