@@ -21,23 +21,25 @@ let connect filename =
   | `Error _ -> return (`Error (Printf.sprintf "Block.connect %s failed" filename))
   | `Ok x -> return (`Ok x)
 
+module R = Shared_block.Ring.Make(Block)
+
 module Producer = struct
-  module BlockProducer = Shared_block.Ring.Producer(Block)
 
   type disk = string
 
   type t = {
-    bp: BlockProducer.t;
+    bp: R.Producer.t;
     mutable disk: Block.t option;
   }
-  type position = BlockProducer.position with sexp_of
+  type position = R.Producer.position with sexp_of
+  let compare = R.Producer.compare
 
   let create ~disk:filename () =
     connect filename
     >>= function
     | `Error x -> return (`Error x)
     | `Ok disk ->
-    BlockProducer.create ~disk ()
+    R.Producer.create ~disk ()
     >>= function
     | `Error x ->
       Block.disconnect disk
@@ -53,7 +55,7 @@ module Producer = struct
     >>= function
     | `Error x -> return (`Error x)
     | `Ok disk ->
-    BlockProducer.attach ~disk ()
+    R.Producer.attach ~disk ()
     >>= function
     | `Error x ->
       Block.disconnect disk
@@ -73,31 +75,31 @@ module Producer = struct
 
   let push ~t ~item () = match t.disk with
   | None -> return (`Error "Not attached")
-  | Some _ -> BlockProducer.push ~t:t.bp ~item ()
+  | Some _ -> R.Producer.push ~t:t.bp ~item ()
 
   let advance ~t ~position () = match t.disk with
   | None -> return (`Error "Not attached")
-  | Some _ -> BlockProducer.advance ~t:t.bp ~position ()
+  | Some _ -> R.Producer.advance ~t:t.bp ~position ()
 
 end
 
 module Consumer = struct
-  module BlockConsumer = Shared_block.Ring.Consumer(Block)
 
   type disk = string
 
   type t = {
-    bc: BlockConsumer.t;
+    bc: R.Consumer.t;
     mutable disk: Block.t option;
   }
-  type position = BlockConsumer.position with sexp_of
+  type position = R.Consumer.position with sexp_of
+  let compare = R.Consumer.compare
 
   let attach ~disk:filename () =
     connect filename
     >>= function
     | `Error x -> return (`Error x)
     | `Ok disk ->
-    BlockConsumer.attach ~disk ()
+    R.Consumer.attach ~disk ()
     >>= function
     | `Error x ->
       Block.disconnect disk
@@ -117,11 +119,11 @@ module Consumer = struct
 
   let pop ~t ?from () = match t.disk with
   | None -> return (`Error "Not attached")
-  | Some _ -> BlockConsumer.pop ~t:t.bc ?from ()
+  | Some _ -> R.Consumer.pop ~t:t.bc ?from ()
   let fold ~f ~t ?from ~init () = match t.disk with
   | None -> return (`Error "Not attached")
-  | Some _ -> BlockConsumer.fold ~f ~t:t.bc ?from ~init ()
+  | Some _ -> R.Consumer.fold ~f ~t:t.bc ?from ~init ()
   let advance ~t ~position () = match t.disk with
   | None -> return (`Error "Not attached")
-  | Some _ -> BlockConsumer.advance ~t:t.bc ~position ()
+  | Some _ -> R.Consumer.advance ~t:t.bc ~position ()
 end

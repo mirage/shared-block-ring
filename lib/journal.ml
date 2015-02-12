@@ -3,21 +3,20 @@ open Sexplib.Std
 open Log
 
 module Make
-  (Producer: S.PRODUCER
-    with type position = int64)
-  (Consumer: S.CONSUMER
-    with type disk = Producer.disk
-     and type position = int64)
+  (Block: S.BLOCK)
   (Op: S.CSTRUCTABLE) = struct
+
+  module R = Ring.Make(Block)
+  open R
 
   type t = {
     p: Producer.t;
     c: Consumer.t;
-    filename: Producer.disk;
+    filename: Block.t;
     cvar: unit Lwt_condition.t;
     mutable please_shutdown: bool;
     mutable shutdown_complete: bool;
-    mutable consumed: int64;
+    mutable consumed: Consumer.position option;
     perform: Op.t -> unit Lwt.t;
   }
 
@@ -85,7 +84,7 @@ module Make
     let please_shutdown = false in
     let shutdown_complete = false in
     let cvar = Lwt_condition.create () in
-    let consumed = 0L in
+    let consumed = None in
     let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
               consumed; perform } in
     replay t
@@ -148,8 +147,15 @@ module Make
              Lwt_condition.broadcast t.cvar ();
              (* Some clients want to know when the item has been processed
                 i.e. when the consumer is > position *)
+             let has_consumed () = match t.consumed with
+             | None -> false
+             | Some c ->
+               begin match Consumer.compare c position with
+               | `GreaterThan | `Equal -> true
+               | `LessThan -> false
+               end in
              let rec wait () =
-               if t.consumed > position
+               if has_consumed ()
                then return ()
                else
                  Lwt_condition.wait t.cvar

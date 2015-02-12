@@ -115,10 +115,23 @@ module Common(B: S.BLOCK) = struct
   | `TooBig -> return `TooBig
   | `Retry -> return `Retry
   | `Error x -> return (`Error x))
+
+  type position = int64 with sexp_of
+
+  let compare (a: position) (b: position) =
+    if a < b then `LessThan
+    else if a > b then `GreaterThan
+    else `Equal
+
 end
 
-module Producer(B: S.BLOCK) = struct
+module Make(B: S.BLOCK) = struct
+
+module Producer = struct
   module C = Common(B)
+
+  type position = C.position with sexp_of
+  let compare = C.compare
 
   type t = {
     disk: B.t;
@@ -183,8 +196,6 @@ module Producer(B: S.BLOCK) = struct
     let result = fn () in
     write realsector t.disk t.sector >>= fun () ->
     return (`Ok result)
-
-  type position = int64 with sexp_of
 
   let unsafe_write t item =
     let open C in
@@ -251,8 +262,11 @@ module Producer(B: S.BLOCK) = struct
       )
 end
 
-module Consumer(B: S.BLOCK) = struct
+module Consumer = struct
   module C = Common(B)
+
+  type position = C.position with sexp_of
+  let compare = C.compare
 
   type t = {
     disk: B.t;
@@ -290,8 +304,6 @@ module Consumer(B: S.BLOCK) = struct
         sector;
         attached = true;
       })
-
-  type position = int64 with sexp_of
 
   let pop t =
     let open C in
@@ -353,4 +365,5 @@ module Consumer(B: S.BLOCK) = struct
         t.consumer <- consumer;
         return (`Ok ())
       )
+end
 end

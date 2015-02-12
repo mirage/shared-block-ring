@@ -14,10 +14,17 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module type BLOCK =
-  V1.BLOCK
+module type BLOCK = V1.BLOCK
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
+
+module type COMPARABLE = sig
+  type t
+  (** An item with a total ordering *)
+
+  val compare: t -> t -> [ `LessThan | `Equal | `GreaterThan ]
+  (** Compare two items *)
+end
 
 module type RING = sig
   type t
@@ -35,7 +42,9 @@ module type RING = sig
       after a detach will result in an [`Error _] *)
 
   type position with sexp_of
-  (** A position within the ring *)
+  (** The position within a stream *)
+
+  include COMPARABLE with type t := position
 
   val advance: t:t -> position:position -> unit -> [ `Ok of unit | `Error of string ] Lwt.t
   (** [advance t position] exposes the item associated with [position] to

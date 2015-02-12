@@ -22,10 +22,12 @@
     the client to either poll for updates or implement another out-of-band
     signalling mechanism. *)
 
-module Producer(B: S.BLOCK):
-  S.PRODUCER
+module Make(B: S.BLOCK): sig
+
+  module Producer: S.PRODUCER
     with type disk := B.t
 
-module Consumer(B: S.BLOCK):
-  S.CONSUMER
+  module Consumer: S.CONSUMER
     with type disk := B.t
+     and type position = Producer.position
+end
