@@ -51,6 +51,7 @@ module Make
            error "In replay, failed to advance consumer: %s" msg;
            fail (Failure msg)
          | `Ok () ->
+           t.consumed <- Some position;
            (* wake up anyone stuck in a `Retry loop *)
            Lwt_condition.broadcast t.cvar ();
            return () )
