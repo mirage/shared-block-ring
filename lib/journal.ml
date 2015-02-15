@@ -18,6 +18,7 @@ module Make
     mutable shutdown_complete: bool;
     mutable consumed: Consumer.position option;
     perform: Op.t list -> unit Lwt.t;
+    m: Lwt_mutex.t;
   }
 
   let replay t =
@@ -34,7 +35,8 @@ module Make
          try
            return (List.map (fun item -> match Op.of_cstruct item with
            | None ->
-             error "Failed to parse journal item";
+             let txt = Cstruct.to_string item in
+             error "Failed to parse item: [%d](%s)" (String.length txt) (String.escaped txt);
              failwith "journal parse failure"
            | Some item ->
              item
@@ -89,8 +91,9 @@ module Make
     let shutdown_complete = false in
     let cvar = Lwt_condition.create () in
     let consumed = None in
+    let m = Lwt_mutex.create () in
     let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
-              consumed; perform } in
+              consumed; perform; m } in
     replay t
     >>= fun () ->
     (* Run a background thread processing items from the journal *)
@@ -168,4 +171,5 @@ module Make
                  wait () in
              return wait )
     end
+  let push t op = Lwt_mutex.with_lock t.m (fun () -> push t op)
 end
