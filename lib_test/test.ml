@@ -165,16 +165,22 @@ let test_journal () =
       | `Error _ -> failwith "Block.connect"
     ) >>= fun device ->
     let module Op = struct
-      type t = unit
-      let to_cstruct () = Cstruct.create 0
-      let of_cstruct _ = Some ()
+      type t = string
+      let to_cstruct x =
+        let c = Cstruct.create (String.length x) in
+        Cstruct.blit_from_string x 0 c 0 (String.length x);
+        c
+      let of_cstruct x = Some (Cstruct.to_string x)
     end in
     let module J = Shared_block.Journal.Make(Block)(Op) in
-    let perform _ =
+    let perform xs =
+      List.iter (fun x ->
+        assert (x = "hello")
+      ) xs;
       return () in
     J.start device perform
     >>= fun j ->
-    J.push j ()
+    J.push j "hello"
     >>= fun wait ->
     wait ()
     >>= fun () ->
