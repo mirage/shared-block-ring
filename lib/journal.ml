@@ -17,7 +17,7 @@ module Make
     mutable please_shutdown: bool;
     mutable shutdown_complete: bool;
     mutable consumed: Consumer.position option;
-    perform: Op.t -> unit Lwt.t;
+    perform: Op.t list -> unit Lwt.t;
   }
 
   let replay t =
@@ -30,20 +30,23 @@ module Make
        fail (Failure msg)
     | `Ok (position, items) ->
        info "There are %d items in the journal to replay" (List.length items);
-       Lwt_list.iter_p
-         (fun item ->
-            match Op.of_cstruct item with
-            | None ->
-              error "Failed to parse journal item";
-              fail (Failure "journal parse failure")
-            | Some item ->
-              Lwt.catch
-                (fun () -> t.perform item) 
-                (fun e ->
-                  error "Failed to process journal item: %s" (Printexc.to_string e);
-                  fail e
-                )
-         ) items
+       begin
+         try
+           return (List.map (fun item -> match Op.of_cstruct item with
+           | None ->
+             error "Failed to parse journal item";
+             failwith "journal parse failure"
+           | Some item ->
+             item
+           ) items)
+         with e -> fail e
+       end >>= fun items ->
+       Lwt.catch
+         (fun () -> t.perform items) 
+         (fun e ->
+            error "Failed to process journal item: %s" (Printexc.to_string e);
+            fail e
+         )
        >>= fun () ->
        ( Consumer.advance ~t:t.c ~position ()
          >>= function
@@ -109,6 +112,7 @@ module Make
 
   let shutdown t =
     t.please_shutdown <- true;
+    Lwt_condition.broadcast t.cvar ();
     let rec loop () =
       if t.shutdown_complete
       then return ()

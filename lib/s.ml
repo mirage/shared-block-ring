@@ -106,7 +106,7 @@ module type JOURNAL = sig
   type operation
   (** An idempotent operation which we will perform at-least-once *)
 
-  val start: disk -> (operation -> unit Lwt.t) -> t Lwt.t
+  val start: disk -> (operation list -> unit Lwt.t) -> t Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing
       function which will be applied at-least-once to every item in the journal. *)
 
