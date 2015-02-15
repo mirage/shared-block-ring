@@ -112,6 +112,7 @@ module Make
 
   let shutdown t =
     t.please_shutdown <- true;
+    Lwt_condition.broadcast t.cvar ();
     let rec loop () =
       if t.shutdown_complete
       then return ()
