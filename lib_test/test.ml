@@ -170,7 +170,7 @@ let test_journal () =
       let of_cstruct _ = Some ()
     end in
     let module J = Shared_block.Journal.Make(Block)(Op) in
-    let perform () =
+    let perform _ =
       return () in
     J.start device perform
     >>= fun j ->
