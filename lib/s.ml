@@ -26,6 +26,12 @@ module type COMPARABLE = sig
   (** Compare two items *)
 end
 
+module type LOG = sig
+  val debug : ('a, unit, string, unit) format4 -> 'a
+  val info  : ('a, unit, string, unit) format4 -> 'a
+  val error : ('a, unit, string, unit) format4 -> 'a
+end
+
 module type RING = sig
   type t
   (* A ring containing variable-sized messages *)

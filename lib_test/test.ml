@@ -172,7 +172,7 @@ let test_journal () =
         c
       let of_cstruct x = Some (Cstruct.to_string x)
     end in
-    let module J = Shared_block.Journal.Make(Block)(Op) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
     let perform xs =
       List.iter (fun x ->
         assert (x = "hello")

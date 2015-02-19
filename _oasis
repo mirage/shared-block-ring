@@ -12,7 +12,7 @@ Library shared_block
   CompiledObject:     best
   Path:               lib
   Findlibname:        shared-block-ring
-  Modules:            Ring, Journal, Log, S
+  Modules:            Ring, Journal, S
   BuildDepends:       cstruct, lwt, mirage-types, io-page, sexplib, sexplib.syntax
 
 Library shared_block_ring_unix
