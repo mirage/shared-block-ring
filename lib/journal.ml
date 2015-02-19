@@ -1,10 +1,12 @@
 open Lwt
 open Sexplib.Std
-open Log
 
 module Make
+  (Log: S.LOG)
   (Block: S.BLOCK)
   (Op: S.CSTRUCTABLE) = struct
+
+  open Log
 
   module R = Ring.Make(Block)
   open R
