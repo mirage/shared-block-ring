@@ -16,7 +16,6 @@
 
 open Lwt
 open OUnit
-open Block_ring_unix
 
 let find_unused_file () =
   (* Find a filename which doesn't exist *)
@@ -74,6 +73,18 @@ let interesting_batch_sizes = [
   5;
 ]
 
+module Op = struct
+  type t = string
+  let to_cstruct x =
+    let c = Cstruct.create (String.length x) in
+    Cstruct.blit_from_string x 0 c 0 (String.length x);
+    c
+  let of_cstruct x = Some (Cstruct.to_string x)
+end
+
+module R = Shared_block.Ring.Make(Block)(Op)
+open R
+
 let test_push_pop length batch () =
   let t =
     let name = find_unused_file () in
@@ -85,17 +96,19 @@ let test_push_pop length batch () =
     fill_with_message sector "\xde\xead\xbe\xef";
     Block.really_write fd sector >>= fun () ->
 
-    let payload = Cstruct.create length in
-    let message = "All work and no play makes Dave a dull boy.\n" in
-    fill_with_message payload message;
+    let payload = "All work and no play makes Dave a dull boy.\n" in
 
-    Producer.create ~disk:name () >>= function
+    Block.connect name
+    >>= function
+    | `Error x -> failwith (Printf.sprintf "Failed to open %s" name)
+    | `Ok disk ->
+    Producer.create ~disk () >>= function
     | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
     | `Ok () ->
-    Producer.attach ~disk:name () >>= function
+    Producer.attach ~disk () >>= function
     | `Error x -> failwith (Printf.sprintf "Producer.attach %s" name)
     | `Ok producer ->
-    Consumer.attach ~disk:name () >>= function
+    Consumer.attach ~disk () >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
     | `Ok consumer ->
     let rec loop = function
@@ -122,7 +135,7 @@ let test_push_pop length batch () =
           Consumer.pop ~t:consumer () >>= function
           | `Error _ | `Retry -> failwith "pop"
           | `Ok (consumer_val,buffer) ->
-            assert_equal ~printer:Cstruct.to_string ~cmp:cstruct_equal payload buffer;
+            assert_equal ~printer:(fun x -> x) payload buffer;
 	    Consumer.advance ~t:consumer ~position:consumer_val () >>= function
 	    | `Ok () ->
               pop (m - 1)
@@ -143,7 +156,7 @@ let test_push_pop length batch () =
         ) >>= fun () ->
         loop (acc + 1) in
     loop 0 >>= fun n ->
-    let expected = Int64.(to_int (div (sub size 1536L) (logand (lognot 3L) (of_int (Cstruct.len payload + 7))))) in
+    let expected = Int64.(to_int (div (sub size 1536L) (logand (lognot 3L) (of_int (String.length payload + 7))))) in
     assert_equal ~printer:string_of_int expected n;
     return () in
   Lwt_main.run t
@@ -164,14 +177,6 @@ let test_journal () =
       | `Ok x -> return x
       | `Error _ -> failwith "Block.connect"
     ) >>= fun device ->
-    let module Op = struct
-      type t = string
-      let to_cstruct x =
-        let c = Cstruct.create (String.length x) in
-        Cstruct.blit_from_string x 0 c 0 (String.length x);
-        c
-      let of_cstruct x = Some (Cstruct.to_string x)
-    end in
     let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
     let perform xs =
       List.iter (fun x ->

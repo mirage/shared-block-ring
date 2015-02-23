@@ -26,6 +26,14 @@ module type COMPARABLE = sig
   (** Compare two items *)
 end
 
+module type CSTRUCTABLE = sig
+  type t
+  (** Something that can be read from and written to a Cstruct.t *)
+
+  val to_cstruct: t -> Cstruct.t
+  val of_cstruct: Cstruct.t -> t option
+end
+
 module type LOG = sig
   val debug : ('a, unit, string, unit) format4 -> 'a
   val info  : ('a, unit, string, unit) format4 -> 'a
@@ -38,6 +46,9 @@ module type RING = sig
 
   type disk
   (* A block device *)
+
+  type item
+  (* A message on the ring *)
 
   val attach: disk:disk -> unit -> [ `Ok of t | `Error of string ] Lwt.t
   (** [attach blockdevice] attaches to a previously-created shared ring on top
@@ -64,7 +75,7 @@ module type PRODUCER = sig
   (** [create blockdevice] initialises a shared ring on top of [blockdevice]
       where we will be able to [push] variable-sized items. *)
 
-  val push: t:t -> item:Cstruct.t -> unit -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
+  val push: t:t -> item:item -> unit -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
   (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
       the Consumer.
       [`Ok position] means the update has been safely written to the block device
@@ -78,7 +89,7 @@ end
 module type CONSUMER = sig
   include RING
 
-  val pop: t:t -> ?from:position -> unit -> [ `Ok of position * Cstruct.t | `Retry | `Error of string ] Lwt.t
+  val pop: t:t -> ?from:position -> unit -> [ `Ok of position * item | `Retry | `Error of string ] Lwt.t
   (** [peek t ?position ()] returns a pair [(position, item)] where [item] is the
       next item on the ring after [from]. Repeated calls to [pop] will return the
       same [item].
@@ -86,21 +97,13 @@ module type CONSUMER = sig
       [`Retry] means there is no item available at the moment and the client should
       try again later. *)
 
-  val fold: f:(Cstruct.t -> 'a -> 'a) -> t:t -> ?from:position -> init:'a -> unit -> [ `Ok of (position * 'a) | `Error of string ] Lwt.t
+  val fold: f:(item -> 'a -> 'a) -> t:t -> ?from:position -> init:'a -> unit -> [ `Ok of (position * 'a) | `Error of string ] Lwt.t
   (** [peek_all f t ?position init ()] folds [f] across all the values that can be
       immediately [peek]ed from the ring. If any of the [fold] operations fail
       then the whole operation fails. The successful result includes the final
       [position] which can be used to consume all the items at once. *)
 end
 
-
-module type CSTRUCTABLE = sig
-  type t
-  (** Something that can be read from and written to a Cstruct.t *)
-
-  val to_cstruct: t -> Cstruct.t
-  val of_cstruct: Cstruct.t -> t option
-end
 
 module type JOURNAL = sig
   type t

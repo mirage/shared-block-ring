@@ -8,7 +8,7 @@ module Make
 
   open Log
 
-  module R = Ring.Make(Block)
+  module R = Ring.Make(Block)(Op)
   open R
 
   type t = {
@@ -33,18 +33,6 @@ module Make
        fail (Failure msg)
     | `Ok (position, items) ->
        info "There are %d items in the journal to replay" (List.length items);
-       begin
-         try
-           return (List.map (fun item -> match Op.of_cstruct item with
-           | None ->
-             let txt = Cstruct.to_string item in
-             error "Failed to parse item: [%d](%s)" (String.length txt) (String.escaped txt);
-             failwith "journal parse failure"
-           | Some item ->
-             item
-           ) items)
-         with e -> fail e
-       end >>= fun items ->
        Lwt.catch
          (fun () -> t.perform items) 
          (fun e ->
@@ -129,20 +117,19 @@ module Make
     >>= fun () ->
     Consumer.detach t.c 
 
-  let rec push t op =
+  let rec push t item =
     if t.please_shutdown
     then fail (Failure "journal shutdown in progress")
     else begin
-      let item = Op.to_cstruct op in
       Producer.push ~t:t.p ~item ()
       >>= function
       | `Retry ->
          info "journal is full; waiting for a notification";
          Lwt_condition.wait t.cvar
          >>= fun () ->
-         push t op
+         push t item
       | `TooBig ->
-         error "journal is too small to receive item of size %d bytes" (Cstruct.len item);
+         error "journal is too small to receive item of size %d bytes" (Cstruct.len (Op.to_cstruct item));
          fail (Failure "journal too small")
       | `Error msg ->
          error "Failed to write item to journal: %s" msg;

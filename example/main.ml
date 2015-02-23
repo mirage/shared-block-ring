@@ -12,23 +12,34 @@
  * GNU Lesser General Public License for more details.
  *)
 open Lwt
-open Block_ring_unix
 
 let project_url = "http://github.com/djs55/shared-block-ring"
 
+module R = Shared_block.Ring.Make(Block)(struct
+  type t = string
+  let to_cstruct x =
+    let r = Cstruct.create (String.length x) in
+    Cstruct.blit_from_string x 0 r 0 (String.length x);
+    r
+  let of_cstruct x = Some (Cstruct.to_string x)
+end)
+open R
+
 let produce filename interval =
   let t =
-    Producer.attach ~disk:filename ()
+    Block.connect filename
+    >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Failed to open %s" filename))
+    | `Ok disk ->
+    Producer.attach ~disk ()
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok p ->
       let rec loop () =
         Lwt_io.read_line Lwt_io.stdin
-        >>= fun line ->
-        let buf = Cstruct.create (String.length line) in
-        Cstruct.blit_from_string line 0 buf 0 (String.length line);
+        >>= fun item ->
         let rec write () =
-          Producer.push ~t:p ~item:buf ()
+          Producer.push ~t:p ~item ()
           >>= function
           | `TooBig -> fail (Failure "input data is too large for this ring")
           | `Retry ->
@@ -52,7 +63,11 @@ let produce filename interval =
 
 let consume filename interval =
   let t =
-    Consumer.attach ~disk:filename ()
+    Block.connect filename
+    >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Failed to open %s" filename))
+    | `Ok disk ->
+    Consumer.attach ~disk ()
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok c ->
@@ -64,8 +79,8 @@ let consume filename interval =
           >>= fun () ->
           loop ()
         | `Error msg -> fail (Failure msg)
-        | `Ok(position, buf) ->
-          Lwt_io.write_line Lwt_io.stdout (Cstruct.to_string buf)
+        | `Ok(position, item) ->
+          Lwt_io.write_line Lwt_io.stdout item
           >>= fun () ->
           ( Consumer.advance ~t:c ~position ()
             >>= function
@@ -79,7 +94,11 @@ let consume filename interval =
 
 let create filename =
   let t =
-    Producer.create ~disk:filename () >>= function
+    Block.connect filename
+    >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
+    | `Ok disk ->
+    Producer.create ~disk () >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Producer.create %s: %s" filename x))
     | `Ok _ -> return () in
   try
@@ -89,7 +108,11 @@ let create filename =
 
 let diagnostics filename =
   let t =
-    Consumer.attach ~disk:filename ()
+    Block.connect filename
+    >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
+    | `Ok disk ->
+    Consumer.attach ~disk ()
     >>= function
     | `Error x -> fail (Failure x)
     | `Ok c ->
@@ -100,7 +123,7 @@ let diagnostics filename =
         return None
       | `Error msg -> fail (Failure msg)
       | `Ok (position, buf) ->
-        Lwt_io.write_line Lwt_io.stdout (Printf.sprintf "%s: %s" (Sexplib.Sexp.to_string (Consumer.sexp_of_position position)) (Cstruct.to_string buf))
+        Lwt_io.write_line Lwt_io.stdout (Printf.sprintf "%s: %s" (Sexplib.Sexp.to_string (Consumer.sexp_of_position position)) buf)
         >>= fun () ->
         return (Some position) in
       Consumer.pop ~t:c ()

@@ -125,13 +125,14 @@ module Common(B: S.BLOCK) = struct
 
 end
 
-module Make(B: S.BLOCK) = struct
+module Make(B: S.BLOCK)(Item: S.CSTRUCTABLE) = struct
 
 module Producer = struct
   module C = Common(B)
 
   type position = C.position with sexp_of
   let compare = C.compare
+  type item = Item.t
 
   type t = {
     disk: B.t;
@@ -249,6 +250,7 @@ module Producer = struct
   let push ~t ~item () =
     must_be_attached t
       (fun () ->
+        let item = Item.to_cstruct item in
         (* every item has a 4 byte header *)
         let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
         let open C in
@@ -267,6 +269,7 @@ module Consumer = struct
 
   type position = C.position with sexp_of
   let compare = C.compare
+  type item = Item.t
 
   type t = {
     disk: B.t;
@@ -337,7 +340,10 @@ module Consumer = struct
       loop (Int64.succ first_sector) (Cstruct.shift result this) >>= fun () ->
       (* Read the payload before updating the consumer pointer *)
       let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (len)))) in
-      return (`Ok (Int64.(add t.consumer needed_bytes),result))
+      match Item.of_cstruct result with
+      | None -> return (`Error (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result))))
+      | Some result ->
+        return (`Ok (Int64.(add t.consumer needed_bytes),result))
     end
 
   let pop ~t ?(from = t.consumer) () =
