@@ -16,6 +16,7 @@ module Make
     c: Consumer.t;
     filename: Block.t;
     cvar: unit Lwt_condition.t;
+    mutable data_available: bool;
     mutable please_shutdown: bool;
     mutable shutdown_complete: bool;
     mutable consumed: Consumer.position option;
@@ -24,6 +25,7 @@ module Make
   }
 
   let replay t =
+    t.data_available <- false;
     Consumer.fold ~f:(fun x y -> x :: y) ~t:t.c ~init:[] ()
     >>= function
     | `Error msg ->
@@ -82,14 +84,17 @@ module Make
     let cvar = Lwt_condition.create () in
     let consumed = None in
     let m = Lwt_mutex.create () in
+    let data_available = true in
     let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
-              consumed; perform; m } in
+              consumed; perform; m; data_available } in
     replay t
     >>= fun () ->
     (* Run a background thread processing items from the journal *)
     let (_: unit Lwt.t) =
       let rec forever () =
-        Lwt_condition.wait t.cvar
+        ( if t.data_available
+          then return ()
+          else Lwt_condition.wait t.cvar )
         >>= fun () ->
         if t.please_shutdown then begin
           t.shutdown_complete <- true;
@@ -141,6 +146,7 @@ module Make
              error "Failed to advance producer pointer: %s" msg;
              fail (Failure msg)
            | `Ok () ->
+             t.data_available <- true;
              Lwt_condition.broadcast t.cvar ();
              (* Some clients want to know when the item has been processed
                 i.e. when the consumer is > position *)
