@@ -86,21 +86,41 @@ module Common(B: S.BLOCK) = struct
     B.write device sector_offset [ sector ] >>= fun () ->
     return (`Ok ())
 
-  let get sector_offset device sector =
-    B.read device sector_offset [ sector ] >>= fun () ->
-    return (`Ok (Cstruct.LE.get_uint64 sector 0))
+  type producer = {
+    producer: int64;
+    suspend_ack: bool;
+  }
 
-  let set sector_offset device sector v =
+  type consumer = {
+    consumer: int64;
+    suspend: bool;
+  }
+
+  let get_producer device sector =
+    B.read device sector_producer [ sector ] >>= fun () ->
+    let producer = Cstruct.LE.get_uint64 sector 0 in
+    let suspend_ack = Cstruct.get_uint8 sector 8 = 1 in
+    return (`Ok { producer; suspend_ack })
+
+  let set_producer device sector v =
     zero sector;
-    Cstruct.LE.set_uint64 sector 0 v;
-    B.write device sector_offset [ sector ] >>= fun () ->
+    Cstruct.LE.set_uint64 sector 0 v.producer;
+    Cstruct.set_uint8 sector 8 (if v.suspend_ack then 1 else 0);
+    B.write device sector_producer [ sector ] >>= fun () ->
     return (`Ok ())
 
-  let get_producer = get sector_producer
-  let get_consumer = get sector_consumer
+  let get_consumer device sector =
+    B.read device sector_consumer [ sector ] >>= fun () ->
+    let consumer = Cstruct.LE.get_uint64 sector 0 in
+    let suspend = Cstruct.get_uint8 sector 8 = 1 in
+    return (`Ok { consumer; suspend })
 
-  let set_producer = set sector_producer
-  let set_consumer = set sector_consumer
+  let set_consumer device sector v =
+    zero sector;
+    Cstruct.LE.set_uint64 sector 0 v.consumer;
+    Cstruct.set_uint8 sector 8 (if v.suspend then 1 else 0);
+    B.write device sector_consumer [ sector ] >>= fun () ->
+    return (`Ok ())
 
   let get_data_sectors info = Int64.(sub info.B.size_sectors sector_data)
 
@@ -113,6 +133,7 @@ module Common(B: S.BLOCK) = struct
   let ( >>= ) m f = Lwt.bind m (function
   | `Ok x -> f x
   | `TooBig -> return `TooBig
+  | `Suspend -> return `Suspend
   | `Retry -> return `Retry
   | `Error x -> return (`Error x))
 
@@ -137,7 +158,7 @@ module Producer = struct
   type t = {
     disk: B.t;
     info: B.info;
-    mutable producer: int64; (* cache of the last value we wrote *)
+    mutable producer: C.producer; (* cache of the last value we wrote *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
     mutable attached: bool;
   }
@@ -182,12 +203,34 @@ module Producer = struct
     then return (`Error "Ring has been detached and cannot be used")
     else f ()
 
-  let get_free_bytes t =
+  let ok_to_write t needed_bytes =
     let open C in
-    get_consumer t.disk t.sector >>= fun consumer ->
-    let used = Int64.sub t.producer consumer in
-    let total = Int64.(mul (of_int t.info.B.sector_size) (C.get_data_sectors t.info)) in
-    return (`Ok (Int64.sub total used))
+    get_consumer t.disk t.sector >>= fun c ->
+    ( if c.suspend <> t.producer.suspend_ack then begin
+        let producer = { t.producer with suspend_ack = c.suspend } in
+        set_producer t.disk t.sector producer >>= fun () ->
+        t.producer <- producer;
+        return (`Ok ())
+      end else return (`Ok ()) ) >>= fun () ->
+    if c.suspend
+    then return `Suspend
+    else
+      let used = Int64.sub t.producer.producer c.consumer in
+      let total = Int64.(mul (of_int t.info.B.sector_size) (C.get_data_sectors t.info)) in
+      let total_sectors = get_data_sectors t.info in
+      if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
+      then return `TooBig
+      else if Int64.sub total used < needed_bytes
+      then return `Retry
+      else return (`Ok ())
+
+  let state t =
+    ok_to_write t 0L
+    >>= function
+    | `Suspend -> return (`Ok `Suspended)
+    | `Error x -> return (`Error x)
+    | `TooBig | `Retry -> return (`Error "it should always be ok to write 0 bytes")
+    | `Ok () -> return (`Ok `Running)
 
   let read_modify_write t sector fn =
     let open C in
@@ -198,12 +241,12 @@ module Producer = struct
     write realsector t.disk t.sector >>= fun () ->
     return (`Ok result)
 
-  let unsafe_write t item =
+  let unsafe_write (t:t) item =
     let open C in
     (* add a 4 byte header of size, and round up to the next 4-byte offset *)
     let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (Cstruct.len item)))) in
-    let first_sector = Int64.(div t.producer (of_int t.info.B.sector_size)) in
-    let first_offset = Int64.(to_int (rem t.producer (of_int t.info.B.sector_size))) in
+    let first_sector = Int64.(div t.producer.producer (of_int t.info.B.sector_size)) in
+    let first_offset = Int64.(to_int (rem t.producer.producer (of_int t.info.B.sector_size))) in
 
     (* Do first sector. We know that we'll always be able to fit in the length header into
        the first page as it's only a 4-byte integer and we're padding to 4-byte offsets. *)
@@ -231,7 +274,7 @@ module Producer = struct
       end in
     loop (Int64.succ first_sector) remaining >>= fun () ->
       (* Write the payload before updating the producer pointer *)
-    let new_producer = Int64.add t.producer needed_bytes in
+    let new_producer = Int64.add t.producer.producer needed_bytes in
     return (`Ok new_producer)
 
   let advance ~t ~position:new_producer () =
@@ -242,8 +285,9 @@ module Producer = struct
           | `Ok x -> f x
           | `Error x -> return (`Error x)
         ) in
-        set_producer t.disk t.sector new_producer >>= fun () ->
-        t.producer <- new_producer;
+        let producer = { t.producer with producer = new_producer } in
+        set_producer t.disk t.sector producer >>= fun () ->
+        t.producer <- producer;
         return (`Ok ())
       )
 
@@ -254,13 +298,9 @@ module Producer = struct
         (* every item has a 4 byte header *)
         let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
         let open C in
-        let total_sectors = get_data_sectors t.info in
-        get_free_bytes t >>= fun free_bytes ->
-        if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
-        then return `TooBig
-        else if free_bytes < needed_bytes
-        then return `Retry
-        else unsafe_write t item
+        ok_to_write t needed_bytes
+        >>= fun () ->
+        unsafe_write t item
       )
 end
 
@@ -274,7 +314,7 @@ module Consumer = struct
   type t = {
     disk: B.t;
     info: B.info;
-    mutable consumer: int64; (* cache of the last value we wrote *)
+    mutable consumer: C.consumer; (* cache of the last value we wrote *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
     mutable attached: bool;
   }
@@ -308,6 +348,30 @@ module Consumer = struct
         attached = true;
       })
 
+  let suspend (t:t) =
+    let consumer = { t.consumer with C.suspend = true } in
+    C.set_consumer t.disk t.sector consumer
+    >>= function
+    | `Ok () ->
+      t.consumer <- consumer;
+      return (`Ok ())
+    | `Error x -> return (`Error x)
+
+  let state t =
+    C.get_producer t.disk t.sector
+    >>= function
+    | `Ok p -> return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
+    | `Error x -> return (`Error x)
+
+  let resume (t: t) =
+    let consumer = { t.consumer with C.suspend = false } in
+    C.set_consumer t.disk t.sector consumer
+    >>= function
+    | `Ok () ->
+      t.consumer <- consumer;
+      return (`Ok ())
+    | `Error x -> return (`Error x)
+
   let pop t =
     let open C in
     let ( >>= ) m f = Lwt.bind m (function
@@ -317,11 +381,11 @@ module Consumer = struct
     ) in
     let total_sectors = get_data_sectors t.info in
     get_producer t.disk t.sector >>= fun producer ->
-    let available_bytes = Int64.sub producer t.consumer in
+    let available_bytes = Int64.sub producer.producer t.consumer.consumer in
     if available_bytes <= 0L
     then return `Retry
     else begin
-      let first_sector,first_offset = get_sector_and_offset t.info t.consumer in
+      let first_sector,first_offset = get_sector_and_offset t.info t.consumer.consumer in
       read Int64.(add sector_data (rem first_sector total_sectors)) t.disk t.sector >>= fun () ->
       let len = Int32.to_int (Cstruct.LE.get_uint32 t.sector first_offset) in
       let result = Cstruct.create len in
@@ -343,16 +407,16 @@ module Consumer = struct
       match Item.of_cstruct result with
       | None -> return (`Error (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result))))
       | Some result ->
-        return (`Ok (Int64.(add t.consumer needed_bytes),result))
+        return (`Ok (Int64.(add t.consumer.consumer needed_bytes),result))
     end
 
-  let pop ~t ?(from = t.consumer) () =
+  let pop ~t ?(from = t.consumer.C.consumer) () =
     must_be_attached t
       (fun () ->
-        pop { t with consumer = from }
+        pop { t with consumer = { t.consumer with C.consumer = from } }
       )
 
-  let rec fold ~f ~t ?(from = t.consumer) ~init:acc () =
+  let rec fold ~f ~t ?(from = t.consumer.C.consumer) ~init:acc () =
     pop ~t ~from ()
     >>= function
     | `Error msg -> return (`Error msg)
@@ -367,8 +431,9 @@ module Consumer = struct
           | `Ok x -> f x
           | `Error x -> return (`Error x)
         ) in
-        set_consumer t.disk t.sector consumer >>= fun () ->
-        t.consumer <- consumer;
+        let consumer' = { t.consumer with consumer = consumer } in
+        set_consumer t.disk t.sector consumer' >>= fun () ->
+        t.consumer <- consumer';
         return (`Ok ())
       )
 end

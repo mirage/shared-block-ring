@@ -136,6 +136,10 @@ module Make
       | `TooBig ->
          error "journal is too small to receive item of size %d bytes" (Cstruct.len (Op.to_cstruct item));
          fail (Failure "journal too small")
+      | `Suspend ->
+         error "Failed to write item to journal: ring is suspended";
+         (* Note: should never happen because we never call suspend *)
+         fail (Failure "suspended")
       | `Error msg ->
          error "Failed to write item to journal: %s" msg;
          fail (Failure msg)

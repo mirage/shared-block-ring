@@ -58,6 +58,12 @@ module type RING = sig
   (** [detach t] frees all resources associated with [t]. Attempts to use [t]
       after a detach will result in an [`Error _] *)
 
+  val state: t -> [ `Ok of [ `Running | `Suspended ] | `Error of string ] Lwt.t
+  (** [state t ()] queries the current state of the ring. If the result is
+      `Suspended then the producer has acknowledged and will nolonger produce
+      items. Clients which support suspend/resume should arrange to call this
+      function periodically. *)
+
   type position with sexp_of
   (** The position within a stream *)
 
@@ -75,19 +81,30 @@ module type PRODUCER = sig
   (** [create blockdevice] initialises a shared ring on top of [blockdevice]
       where we will be able to [push] variable-sized items. *)
 
-  val push: t:t -> item:item -> unit -> [ `Ok of position | `TooBig | `Retry | `Error of string ] Lwt.t
+  val push: t:t -> item:item -> unit -> [ `Ok of position | `TooBig | `Suspend | `Retry | `Error of string ] Lwt.t
   (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
       the Consumer.
       [`Ok position] means the update has been safely written to the block device
       and can be exposed to the Consumer by calling [advance position].
       [`TooBig] means the item is too big for the ring: we adopt the convention
       that items must be written to the ring in one go
+      [`Suspend] means that the consumer has requested that no more items
+      be pushed onto the queue temporarily
       [`Retry] means that the item should fit but there is temporarily not
       enough space in the ring. The client should retry later. *)
 end
 
 module type CONSUMER = sig
   include RING
+
+  val suspend: t -> [ `Ok of unit | `Error of string ] Lwt.t
+  (** [suspend t] signals that the producer should stop pushing items.
+      Note this function returns before the producer has acknowledged. *)
+
+  val resume: t -> [ `Ok of unit | `Error of string ] Lwt.t
+  (** [resume t] signals that a producer may again start pushing items.
+      This call does not wait for an acknowledgement from the producer.
+      Note it is not an error to resume an already-resumed queue. *)
 
   val pop: t:t -> ?from:position -> unit -> [ `Ok of position * item | `Retry | `Error of string ] Lwt.t
   (** [peek t ?position ()] returns a pair [(position, item)] where [item] is the

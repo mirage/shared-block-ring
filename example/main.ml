@@ -42,6 +42,7 @@ let produce filename interval =
           Producer.push ~t:p ~item ()
           >>= function
           | `TooBig -> fail (Failure "input data is too large for this ring")
+          | `Suspend -> fail (Failure "ring is suspended, cannot push")
           | `Retry ->
             Lwt_unix.sleep (float_of_int interval)
             >>= fun () ->

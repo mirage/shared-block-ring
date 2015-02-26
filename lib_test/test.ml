@@ -121,7 +121,7 @@ let test_push_pop length batch () =
         | 0 -> return ()
         | m ->
           Producer.push ~t:producer ~item:payload () >>= function
-          | `Error _ | `TooBig | `Retry -> failwith "push"
+          | `Error _ | `TooBig | `Retry | `Suspend -> failwith "push"
           | `Ok position ->
             (Producer.advance ~t:producer ~position () >>= function
               | `Error x -> failwith "Producer.advance"
@@ -148,7 +148,7 @@ let test_push_pop length batch () =
     let rec loop acc =
       Producer.push ~t:producer ~item:payload () >>= function
       | `Retry -> return acc
-      | `Error _ | `TooBig -> failwith "counting the number of pushes"
+      | `Error _ | `TooBig | `Suspend -> failwith "counting the number of pushes"
       | `Ok position ->
         (Producer.advance ~t:producer ~position () >>= function
         | `Error x -> failwith "Producer.advance"
