@@ -27,6 +27,26 @@ let find_unused_file () =
     else name in
   does_not_exist 0
 
+let alloc sector_size =
+  let page = Io_page.(to_cstruct (get 1)) in
+  let sector = Cstruct.sub page 0 sector_size in
+  sector
+
+let fill_with_message buffer message =
+  for i = 0 to Cstruct.len buffer - 1 do
+    Cstruct.set_char buffer i (message.[i mod (String.length message)])
+  done
+
+let fresh_file nsectors =
+  let name = find_unused_file () in
+  Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
+  (* Write the last sector to make sure the file has the intended size *)
+  Lwt_unix.LargeFile.lseek fd Int64.(sub nsectors 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
+  let sector = alloc 512 in
+  fill_with_message sector "\xde\xead\xbe\xef";
+  Block.really_write fd sector >>= fun () ->
+  return name
+
 exception Cstruct_differ
 
 let cstruct_equal a b =
@@ -41,11 +61,6 @@ let cstruct_equal a b =
     with _ -> false in
       (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
 
-let alloc sector_size =
-  let page = Io_page.(to_cstruct (get 1)) in
-  let sector = Cstruct.sub page 0 sector_size in
-  sector
-
 let interesting_lengths = [
   0; (* possible base case *)
   1; (* easily fits inside a sector with the 4 byte header *)
@@ -54,15 +69,6 @@ let interesting_lengths = [
   512 - 4 + 1;
   2000; (* More than 3 sectors *)
 ]
-
-(* ring too small *)
-
-let fill_with_message buffer message =
-    for i = 0 to Cstruct.len buffer - 1 do
-      Cstruct.set_char buffer i (message.[i mod (String.length message)])
-    done
-
-let size = 16384L
 
 (* number of pushes before we pop *)
 let interesting_batch_sizes = [
@@ -85,16 +91,12 @@ end
 module R = Shared_block.Ring.Make(Block)(Op)
 open R
 
+let size = 16384L
+
 let test_push_pop length batch () =
   let t =
-    let name = find_unused_file () in
-    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
-    let size = 16384L in
-    (* Write the last sector to make sure the file has the intended size *)
-    Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
-    let sector = alloc 512 in
-    fill_with_message sector "\xde\xead\xbe\xef";
-    Block.really_write fd sector >>= fun () ->
+    fresh_file size
+    >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
 
@@ -163,14 +165,8 @@ let test_push_pop length batch () =
 
 let test_journal () =
   let t =
-    let name = find_unused_file () in
-    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
-    let size = 16384L in
-    (* Write the last sector to make sure the file has the intended size *)
-    Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
-    let sector = alloc 512 in
-    fill_with_message sector "\xde\xead\xbe\xef";
-    Block.really_write fd sector >>= fun () ->
+    fresh_file size
+    >>= fun name ->
 
     ( Block.connect name
       >>= function
