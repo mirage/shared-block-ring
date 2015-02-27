@@ -27,6 +27,26 @@ let find_unused_file () =
     else name in
   does_not_exist 0
 
+let alloc sector_size =
+  let page = Io_page.(to_cstruct (get 1)) in
+  let sector = Cstruct.sub page 0 sector_size in
+  sector
+
+let fill_with_message buffer message =
+  for i = 0 to Cstruct.len buffer - 1 do
+    Cstruct.set_char buffer i (message.[i mod (String.length message)])
+  done
+
+let fresh_file nsectors =
+  let name = find_unused_file () in
+  Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
+  (* Write the last sector to make sure the file has the intended size *)
+  Lwt_unix.LargeFile.lseek fd Int64.(sub nsectors 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
+  let sector = alloc 512 in
+  fill_with_message sector "\xde\xead\xbe\xef";
+  Block.really_write fd sector >>= fun () ->
+  return name
+
 exception Cstruct_differ
 
 let cstruct_equal a b =
@@ -41,11 +61,6 @@ let cstruct_equal a b =
     with _ -> false in
       (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
 
-let alloc sector_size =
-  let page = Io_page.(to_cstruct (get 1)) in
-  let sector = Cstruct.sub page 0 sector_size in
-  sector
-
 let interesting_lengths = [
   0; (* possible base case *)
   1; (* easily fits inside a sector with the 4 byte header *)
@@ -54,15 +69,6 @@ let interesting_lengths = [
   512 - 4 + 1;
   2000; (* More than 3 sectors *)
 ]
-
-(* ring too small *)
-
-let fill_with_message buffer message =
-    for i = 0 to Cstruct.len buffer - 1 do
-      Cstruct.set_char buffer i (message.[i mod (String.length message)])
-    done
-
-let size = 16384L
 
 (* number of pushes before we pop *)
 let interesting_batch_sizes = [
@@ -85,16 +91,12 @@ end
 module R = Shared_block.Ring.Make(Block)(Op)
 open R
 
+let size = 16384L
+
 let test_push_pop length batch () =
   let t =
-    let name = find_unused_file () in
-    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
-    let size = 16384L in
-    (* Write the last sector to make sure the file has the intended size *)
-    Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
-    let sector = alloc 512 in
-    fill_with_message sector "\xde\xead\xbe\xef";
-    Block.really_write fd sector >>= fun () ->
+    fresh_file size
+    >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
 
@@ -121,7 +123,7 @@ let test_push_pop length batch () =
         | 0 -> return ()
         | m ->
           Producer.push ~t:producer ~item:payload () >>= function
-          | `Error _ | `TooBig | `Retry -> failwith "push"
+          | `Error _ | `TooBig | `Retry | `Suspend -> failwith "push"
           | `Ok position ->
             (Producer.advance ~t:producer ~position () >>= function
               | `Error x -> failwith "Producer.advance"
@@ -148,7 +150,7 @@ let test_push_pop length batch () =
     let rec loop acc =
       Producer.push ~t:producer ~item:payload () >>= function
       | `Retry -> return acc
-      | `Error _ | `TooBig -> failwith "counting the number of pushes"
+      | `Error _ | `TooBig | `Suspend -> failwith "counting the number of pushes"
       | `Ok position ->
         (Producer.advance ~t:producer ~position () >>= function
         | `Error x -> failwith "Producer.advance"
@@ -161,16 +163,86 @@ let test_push_pop length batch () =
     return () in
   Lwt_main.run t
 
+let test_suspend () =
+  let t =
+    fresh_file size
+    >>= fun name ->
+
+    Block.connect name
+    >>= function
+    | `Error x -> failwith (Printf.sprintf "Failed to open %s" name)
+    | `Ok disk ->
+    Producer.create ~disk () >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
+    | `Ok () ->
+    Producer.attach ~disk () >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.attach %s" name)
+    | `Ok producer ->
+    Consumer.attach ~disk () >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
+    | `Ok consumer ->
+    (* consumer thinks the queue is running *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Suspended -> failwith "queue is suspended too early"
+    | `Ok `Running ->
+    (* so does the producer *)
+    Producer.state producer >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
+    | `Ok `Suspended -> failwith "queue is suspended too early"
+    | `Ok `Running ->
+    (* consumer requests a suspend *)
+    Consumer.suspend consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
+    | `Retry -> failwith "Consumer.suspend retry"
+    | `Ok () ->
+    (* it is not possible to request a resume before the ack *)
+    Consumer.resume consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
+    | `Ok () -> failwith "it shouldn't be possible to immediately resume"
+    | `Retry ->
+    (* but the producer hasn't seen it so the queue is still running *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Suspended -> failwith "queue is suspended too early"
+    | `Ok `Running ->
+    (* when the producer looks, it sees the suspend *)
+    Producer.state producer >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
+    | `Ok `Running -> failwith "queue is still running"
+    | `Ok `Suspended ->
+    (* now the consumer sees the producer has suspended *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Running -> failwith "everyone should agree the queue is suspended"
+    | `Ok `Suspended ->
+    Consumer.resume consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
+    | `Retry -> failwith "Consumer.resume failed with Retry"
+    | `Ok () ->
+    (* The queue is still suspended until the producer acknowledges *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Running -> failwith "queue resumed too early"
+    | `Ok `Suspended ->
+    (* The queue cannot be re-suspended until the producer has seen the resume *)
+    Consumer.suspend consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
+    | `Ok () -> failwith "Consumer.suspend succeeded too early"
+    | `Retry ->
+    (* The producer notices it immediately too *)
+    Producer.state producer >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
+    | `Ok `Suspended -> failwith "producer should have seen the resume"
+    | `Ok `Running ->
+    
+    return () in
+  Lwt_main.run t
+
 let test_journal () =
   let t =
-    let name = find_unused_file () in
-    Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
-    let size = 16384L in
-    (* Write the last sector to make sure the file has the intended size *)
-    Lwt_unix.LargeFile.lseek fd Int64.(sub size 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
-    let sector = alloc 512 in
-    fill_with_message sector "\xde\xead\xbe\xef";
-    Block.really_write fd sector >>= fun () ->
+    fresh_file size
+    >>= fun name ->
 
     ( Block.connect name
       >>= function
@@ -208,6 +280,7 @@ let _ =
   ) (allpairs interesting_lengths interesting_batch_sizes) in
 
   let suite = "shared-block-ring" >::: [
+    "test suspend" >:: test_suspend;
     "test journal" >:: test_journal;
   ] @ test_push_pops in
   run_test_tt ~verbose:!verbose suite

@@ -1,7 +1,7 @@
 .PHONY: all clean install build
 all: build doc
 
-NAME=mirage-block
+NAME=shared-block-ring
 J=4
 
 export OCAMLRUNPARAM=b
