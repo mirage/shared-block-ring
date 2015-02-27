@@ -97,14 +97,18 @@ end
 module type CONSUMER = sig
   include RING
 
-  val suspend: t -> [ `Ok of unit | `Error of string ] Lwt.t
+  val suspend: t -> [ `Ok of unit | `Retry | `Error of string ] Lwt.t
   (** [suspend t] signals that the producer should stop pushing items.
-      Note this function returns before the producer has acknowledged. *)
+      Note this function returns before the producer has acknowledged.
+      The result `Retry means that a previous call to [resume] has not
+      been acknowledged; the client should retry. *)
 
-  val resume: t -> [ `Ok of unit | `Error of string ] Lwt.t
+  val resume: t -> [ `Ok of unit | `Retry | `Error of string ] Lwt.t
   (** [resume t] signals that a producer may again start pushing items.
       This call does not wait for an acknowledgement from the producer.
-      Note it is not an error to resume an already-resumed queue. *)
+      Note it is not an error to resume an already-resumed queue.
+      The result `Retry means that a previous call to [suspend] has not
+      been acknowledged; the client should retry. *)
 
   val pop: t:t -> ?from:position -> unit -> [ `Ok of position * item | `Retry | `Error of string ] Lwt.t
   (** [peek t ?position ()] returns a pair [(position, item)] where [item] is the

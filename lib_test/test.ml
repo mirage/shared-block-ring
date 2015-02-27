@@ -163,6 +163,82 @@ let test_push_pop length batch () =
     return () in
   Lwt_main.run t
 
+let test_suspend () =
+  let t =
+    fresh_file size
+    >>= fun name ->
+
+    Block.connect name
+    >>= function
+    | `Error x -> failwith (Printf.sprintf "Failed to open %s" name)
+    | `Ok disk ->
+    Producer.create ~disk () >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
+    | `Ok () ->
+    Producer.attach ~disk () >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.attach %s" name)
+    | `Ok producer ->
+    Consumer.attach ~disk () >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
+    | `Ok consumer ->
+    (* consumer thinks the queue is running *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Suspended -> failwith "queue is suspended too early"
+    | `Ok `Running ->
+    (* so does the producer *)
+    Producer.state producer >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
+    | `Ok `Suspended -> failwith "queue is suspended too early"
+    | `Ok `Running ->
+    (* consumer requests a suspend *)
+    Consumer.suspend consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
+    | `Retry -> failwith "Consumer.suspend retry"
+    | `Ok () ->
+    (* it is not possible to request a resume before the ack *)
+    Consumer.resume consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
+    | `Ok () -> failwith "it shouldn't be possible to immediately resume"
+    | `Retry ->
+    (* but the producer hasn't seen it so the queue is still running *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Suspended -> failwith "queue is suspended too early"
+    | `Ok `Running ->
+    (* when the producer looks, it sees the suspend *)
+    Producer.state producer >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
+    | `Ok `Running -> failwith "queue is still running"
+    | `Ok `Suspended ->
+    (* now the consumer sees the producer has suspended *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Running -> failwith "everyone should agree the queue is suspended"
+    | `Ok `Suspended ->
+    Consumer.resume consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
+    | `Retry -> failwith "Consumer.resume failed with Retry"
+    | `Ok () ->
+    (* The queue is still suspended until the producer acknowledges *)
+    Consumer.state consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
+    | `Ok `Running -> failwith "queue resumed too early"
+    | `Ok `Suspended ->
+    (* The queue cannot be re-suspended until the producer has seen the resume *)
+    Consumer.suspend consumer >>= function
+    | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
+    | `Ok () -> failwith "Consumer.suspend succeeded too early"
+    | `Retry ->
+    (* The producer notices it immediately too *)
+    Producer.state producer >>= function
+    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
+    | `Ok `Suspended -> failwith "producer should have seen the resume"
+    | `Ok `Running ->
+    
+    return () in
+  Lwt_main.run t
+
 let test_journal () =
   let t =
     fresh_file size
@@ -204,6 +280,7 @@ let _ =
   ) (allpairs interesting_lengths interesting_batch_sizes) in
 
   let suite = "shared-block-ring" >::: [
+    "test suspend" >:: test_suspend;
     "test journal" >:: test_journal;
   ] @ test_push_pops in
   run_test_tt ~verbose:!verbose suite

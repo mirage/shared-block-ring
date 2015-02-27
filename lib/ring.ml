@@ -349,13 +349,20 @@ module Consumer = struct
       })
 
   let suspend (t:t) =
-    let consumer = { t.consumer with C.suspend = true } in
-    C.set_consumer t.disk t.sector consumer
+    C.get_producer t.disk t.sector
     >>= function
-    | `Ok () ->
-      t.consumer <- consumer;
-      return (`Ok ())
     | `Error x -> return (`Error x)
+    | `Ok producer ->
+      if t.consumer.C.suspend <> producer.C.suspend_ack
+      then return `Retry
+      else
+        let consumer = { t.consumer with C.suspend = true } in
+        C.set_consumer t.disk t.sector consumer
+        >>= function
+        | `Ok () ->
+          t.consumer <- consumer;
+          return (`Ok ())
+        | `Error x -> return (`Error x)
 
   let state t =
     C.get_producer t.disk t.sector
@@ -364,13 +371,21 @@ module Consumer = struct
     | `Error x -> return (`Error x)
 
   let resume (t: t) =
-    let consumer = { t.consumer with C.suspend = false } in
-    C.set_consumer t.disk t.sector consumer
+    C.get_producer t.disk t.sector
     >>= function
-    | `Ok () ->
-      t.consumer <- consumer;
-      return (`Ok ())
     | `Error x -> return (`Error x)
+    | `Ok producer ->
+      let open Lwt in
+      if t.consumer.C.suspend <> producer.C.suspend_ack
+      then return `Retry
+      else
+        let consumer = { t.consumer with C.suspend = false } in
+        C.set_consumer t.disk t.sector consumer
+        >>= function
+        | `Ok () ->
+          t.consumer <- consumer;
+          return (`Ok ())
+        | `Error x -> return (`Error x)
 
   let pop t =
     let open C in
