@@ -12,3 +12,10 @@ setup.data
 setup.log
 _build
 *.native
+setup.ml
+myocamlbuild.ml
+_tags
+*.mllib
+*.mldylib
+*.mlpack
+META

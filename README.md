@@ -1,6 +1,9 @@
 shared-block-ring
 =================
 
+[![Build Status](https://travis-ci.org/mirage/shared-block-ring.png?branch=master)](https://travis-ci.org/mirage/shared-block-ring)
+[![Coverage Status](https://coveralls.io/repos/mirage/shared-block-ring/badge.png?branch=master)](https://coveralls.io/r/mirage/shared-block-ring?branch=master)
+
 A simple on-disk fixed length queue in the style of the
 Xen [shared-memory-ring](https://github.com/mirage/shared-memory-ring).
 In particular the producer and consumer APIs allow clients to control
