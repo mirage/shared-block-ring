@@ -17,6 +17,20 @@
 open Lwt
 open OUnit
 
+(* Let's try to adopt the conventions of Rresult.R *)
+
+let get_ok = function
+| `Ok x -> x
+| `Error _ -> raise (Invalid_argument "get_ok encountered an `Error")
+
+let get_error = function
+| `Error x -> x
+| `Ok _ -> raise (Invalid_argument "get_error encountered an `Ok")
+
+module Lwt_result = struct
+  let (>>=) m f = m >>= fun x -> f (get_ok x)
+end
+
 let find_unused_file () =
   (* Find a filename which doesn't exist *)
   let rec does_not_exist i =
@@ -94,28 +108,22 @@ open R
 let size = 16384L
 
 let test_push_pop length batch () =
-  let t =
+  let t : unit Lwt.t =
     fresh_file size
     >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
 
+    let open Lwt_result in
     Block.connect name
-    >>= function
-    | `Error x -> failwith (Printf.sprintf "Failed to open %s" name)
-    | `Ok disk ->
-    Producer.create ~disk () >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
-    | `Ok () ->
-    Producer.attach ~disk () >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.attach %s" name)
-    | `Ok producer ->
-    Consumer.attach ~disk () >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
-    | `Ok consumer ->
+    >>= fun disk ->
+    Producer.create ~disk () >>= fun () ->
+    Producer.attach ~disk () >>= fun producer ->
+    Consumer.attach ~disk () >>= fun consumer ->
     let rec loop = function
       | 0 -> return ()
       | n ->
+        let open Lwt in
         Consumer.pop ~t:consumer () >>= function
         | `Ok _ | `Error _ -> failwith "empty pop"
         | `Retry ->
@@ -125,9 +133,9 @@ let test_push_pop length batch () =
           Producer.push ~t:producer ~item:payload () >>= function
           | `Error _ | `TooBig | `Retry | `Suspend -> failwith "push"
           | `Ok position ->
-            (Producer.advance ~t:producer ~position () >>= function
-              | `Error x -> failwith "Producer.advance"
-              | `Ok () -> return ()
+            (Producer.advance ~t:producer ~position () >>= fun unit ->
+             get_ok unit;
+             return () 
             ) >>= fun () ->
             push (m - 1) in
         push batch >>= fun () ->
@@ -145,21 +153,25 @@ let test_push_pop length batch () =
         pop batch >>= fun () ->
         loop (n - 1) in
     (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
+    let open Lwt in
     loop Int64.(to_int (mul 2L (div size 512L))) >>= fun () ->
     (* count how many items we can push in total *)
     let rec loop acc =
+      let open Lwt in
       Producer.push ~t:producer ~item:payload () >>= function
       | `Retry -> return acc
       | `Error _ | `TooBig | `Suspend -> failwith "counting the number of pushes"
       | `Ok position ->
-        (Producer.advance ~t:producer ~position () >>= function
-        | `Error x -> failwith "Producer.advance"
-        | `Ok () -> return ()
+        (Producer.advance ~t:producer ~position () >>= fun unit ->
+         get_ok unit;
+         return ()
         ) >>= fun () ->
         loop (acc + 1) in
     loop 0 >>= fun n ->
     let expected = Int64.(to_int (div (sub size 1536L) (logand (lognot 3L) (of_int (String.length payload + 7))))) in
     assert_equal ~printer:string_of_int expected n;
+    Producer.detach producer >>= fun () ->
+    Consumer.detach consumer >>= fun () ->
     return () in
   Lwt_main.run t
 
@@ -168,20 +180,13 @@ let test_suspend () =
     fresh_file size
     >>= fun name ->
 
-    Block.connect name
-    >>= function
-    | `Error x -> failwith (Printf.sprintf "Failed to open %s" name)
-    | `Ok disk ->
-    Producer.create ~disk () >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.create %s" name)
-    | `Ok () ->
-    Producer.attach ~disk () >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.attach %s" name)
-    | `Ok producer ->
-    Consumer.attach ~disk () >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.create %s" name)
-    | `Ok consumer ->
+    let open Lwt_result in
+    Block.connect name >>= fun disk ->
+    Producer.create ~disk () >>= fun () ->
+    Producer.attach ~disk () >>= fun producer ->
+    Consumer.attach ~disk () >>= fun consumer ->
     (* consumer thinks the queue is running *)
+    let open Lwt in
     Consumer.state consumer >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
     | `Ok `Suspended -> failwith "queue is suspended too early"
@@ -244,17 +249,15 @@ let test_journal () =
     fresh_file size
     >>= fun name ->
 
-    ( Block.connect name
-      >>= function
-      | `Ok x -> return x
-      | `Error _ -> failwith "Block.connect"
-    ) >>= fun device ->
+    let open Lwt_result in
+    Block.connect name >>= fun device ->
     let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
     let perform xs =
       List.iter (fun x ->
         assert (x = "hello")
       ) xs;
       return () in
+    let open Lwt in
     J.start device perform
     >>= fun j ->
     J.push j "hello"
