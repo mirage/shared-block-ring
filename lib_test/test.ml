@@ -61,20 +61,6 @@ let fresh_file nsectors =
   Block.really_write fd sector >>= fun () ->
   return name
 
-exception Cstruct_differ
-
-let cstruct_equal a b =
-  let check_contents a b =
-    try
-      for i = 0 to Cstruct.len a - 1 do
-        let a' = Cstruct.get_char a i in
-        let b' = Cstruct.get_char b i in
-        if a' <> b' then raise Cstruct_differ
-      done;
-      true
-    with _ -> false in
-      (Cstruct.len a = (Cstruct.len b)) && (check_contents a b)
-
 let interesting_lengths = [
   0; (* possible base case *)
   1; (* easily fits inside a sector with the 4 byte header *)
@@ -113,7 +99,7 @@ let test_push_pop length batch () =
     >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
-
+    let toobig = String.create Int64.(to_int size) in
     let open Lwt_result in
     Block.connect name
     >>= fun disk ->
@@ -130,6 +116,9 @@ let test_push_pop length batch () =
         let rec push = function
         | 0 -> return ()
         | m ->
+          ( Producer.push ~t:producer ~item:toobig () >>= function
+            | `TooBig -> return ()
+            | _ -> failwith "push" ) >>= fun () ->
           Producer.push ~t:producer ~item:payload () >>= function
           | `Error _ | `TooBig | `Retry | `Suspend -> failwith "push"
           | `Ok position ->
@@ -264,9 +253,16 @@ let test_journal () =
     >>= fun wait ->
     wait ()
     >>= fun () ->
-    J.shutdown j
-    >>= fun () ->
-    return () in
+    Lwt.catch
+      (fun () ->
+        J.push j (String.create (Int64.to_int size))
+        >>= fun _ ->
+        failwith "pushed toobig to journal"
+      ) (fun _ ->
+        J.shutdown j
+        >>= fun () ->
+        return ()
+      ) in
   Lwt_main.run t
 
 let rec allpairs xs ys = match xs with
