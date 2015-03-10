@@ -261,6 +261,8 @@ let test_journal () =
     >>= fun wait ->
     wait ()
     >>= fun () ->
+    J.shutdown j
+    >>= fun () ->
     return () in
   Lwt_main.run t
 
