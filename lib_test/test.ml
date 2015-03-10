@@ -113,7 +113,7 @@ let test_push_pop length batch () =
     >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
-
+    let toobig = String.create Int64.(to_int size) in
     let open Lwt_result in
     Block.connect name
     >>= fun disk ->
@@ -130,6 +130,9 @@ let test_push_pop length batch () =
         let rec push = function
         | 0 -> return ()
         | m ->
+          ( Producer.push ~t:producer ~item:toobig () >>= function
+            | `TooBig -> return ()
+            | _ -> failwith "push" ) >>= fun () ->
           Producer.push ~t:producer ~item:payload () >>= function
           | `Error _ | `TooBig | `Retry | `Suspend -> failwith "push"
           | `Ok position ->
@@ -264,9 +267,16 @@ let test_journal () =
     >>= fun wait ->
     wait ()
     >>= fun () ->
-    J.shutdown j
-    >>= fun () ->
-    return () in
+    Lwt.catch
+      (fun () ->
+        J.push j (String.create (Int64.to_int size))
+        >>= fun _ ->
+        failwith "pushed toobig to journal"
+      ) (fun _ ->
+        J.shutdown j
+        >>= fun () ->
+        return ()
+      ) in
   Lwt_main.run t
 
 let rec allpairs xs ys = match xs with
