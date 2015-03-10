@@ -22,7 +22,7 @@
     the client to either poll for updates or implement another out-of-band
     signalling mechanism. *)
 
-module Make(B: S.BLOCK)(Item: S.CSTRUCTABLE): sig
+module Make(Log: S.LOG)(B: S.BLOCK)(Item: S.CSTRUCTABLE): sig
 
   module Producer: S.PRODUCER
     with type disk := B.t

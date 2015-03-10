@@ -15,7 +15,13 @@ open Lwt
 
 let project_url = "http://github.com/djs55/shared-block-ring"
 
-module R = Shared_block.Ring.Make(Block)(struct
+module Log = struct
+  let debug fmt = Printf.ksprintf (fun s -> print_endline s) fmt
+  let info  fmt = Printf.ksprintf (fun s -> print_endline s) fmt
+  let error fmt = Printf.ksprintf (fun s -> print_endline s) fmt
+end
+
+module R = Shared_block.Ring.Make(Log)(Block)(struct
   type t = string
   let to_cstruct x =
     let r = Cstruct.create (String.length x) in

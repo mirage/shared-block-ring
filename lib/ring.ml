@@ -42,14 +42,22 @@ let alloc sector_size =
   let sector = Cstruct.sub page 0 sector_size in
   sector
 
-module Common(B: S.BLOCK) = struct
+module Common(Log: S.LOG)(B: S.BLOCK) = struct
   (* Convert the block errors *)
   let ( >>= ) m f = m >>= function
   | `Ok x -> f x
-  | `Error (`Unknown x) -> return (`Error x)
+  (* These fatal errors from the block layer indicate a software bug:
+     code missing, device openeed read-only, or device prematurely
+     disconnected. The best we can do is to propagate an unhandleable
+     error upwards to where it can be logged, and the process / thread
+     can exit. *)
   | `Error `Unimplemented -> return (`Error "unimplemented")
   | `Error `Is_read_only -> return (`Error "is_read_only")
   | `Error `Disconnected -> return (`Error "disconnected")
+  (* This is a bad error which includes both permanent failures and
+     I/O errors which could be recoverable. We will assume the error
+     can be recovered and invite the upper layer to retry. *)
+  | `Error (`Unknown x) -> return (`Error x)
 
   let initialise device sector =
     (* Initialise the producer and consumer before writing the magic
@@ -146,10 +154,10 @@ module Common(B: S.BLOCK) = struct
 
 end
 
-module Make(B: S.BLOCK)(Item: S.CSTRUCTABLE) = struct
+module Make(Log: S.LOG)(B: S.BLOCK)(Item: S.CSTRUCTABLE) = struct
 
 module Producer = struct
-  module C = Common(B)
+  module C = Common(Log)(B)
 
   type position = C.position with sexp_of
   let compare = C.compare
@@ -305,7 +313,7 @@ module Producer = struct
 end
 
 module Consumer = struct
-  module C = Common(B)
+  module C = Common(Log)(B)
 
   type position = C.position with sexp_of
   let compare = C.compare

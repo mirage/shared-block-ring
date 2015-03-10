@@ -8,7 +8,7 @@ module Make
 
   open Log
 
-  module R = Ring.Make(Block)(Op)
+  module R = Ring.Make(Log)(Block)(Op)
   open R
 
   type t = {

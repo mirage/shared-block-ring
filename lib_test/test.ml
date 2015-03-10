@@ -88,7 +88,7 @@ module Op = struct
   let of_cstruct x = Some (Cstruct.to_string x)
 end
 
-module R = Shared_block.Ring.Make(Block)(Op)
+module R = Shared_block.Ring.Make(Log)(Block)(Op)
 open R
 
 let size = 16384L
