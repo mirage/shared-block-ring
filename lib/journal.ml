@@ -13,6 +13,8 @@ module Make
 
   type error = [ `Retry | `Suspended | `Msg of string ]
 
+  type 'a result = ('a, error) Result.t
+
   type waiter = unit -> unit Lwt.t
 
   type t = {

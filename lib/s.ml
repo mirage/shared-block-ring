@@ -51,8 +51,12 @@ module type RING = sig
   (* A message on the ring *)
 
   type error = [ `Retry | `Suspended | `Msg of string ]
+(*
+  val pp_error : Format.formatter -> error -> unit
+*)
+  type 'a result = ('a, error) Result.t
 
-  val attach: disk:disk -> unit -> (t, [> error]) Result.t Lwt.t
+  val attach: disk:disk -> unit -> t result Lwt.t
   (** [attach blockdevice] attaches to a previously-created shared ring on top
       of [blockdevice]. *)
 
@@ -60,7 +64,7 @@ module type RING = sig
   (** [detach t] frees all resources associated with [t]. Attempts to use [t]
       after a detach will result in an [`Error _] *)
 
-  val state: t -> ( [`Running | `Suspended], [> error]) Result.t Lwt.t
+  val state: t -> [`Running | `Suspended] result Lwt.t
   (** [state t ()] queries the current state of the ring. If the result is
       `Suspended then the producer has acknowledged and will nolonger produce
       items. Clients which support suspend/resume should arrange to call this
@@ -71,7 +75,7 @@ module type RING = sig
 
   include COMPARABLE with type t := position
 
-  val advance: t:t -> position:position -> unit -> (unit, [> error]) Result.t Lwt.t
+  val advance: t:t -> position:position -> unit -> unit result Lwt.t
   (** [advance t position] exposes the item associated with [position] to
       the Consumer so it can be [pop]ped. *)
 end
@@ -79,11 +83,11 @@ end
 module type PRODUCER = sig
   include RING
 
-  val create: disk:disk -> unit -> (unit, [> error]) Result.t Lwt.t
+  val create: disk:disk -> unit -> unit result Lwt.t
   (** [create blockdevice] initialises a shared ring on top of [blockdevice]
       where we will be able to [push] variable-sized items. *)
 
-  val push: t:t -> item:item -> unit -> (position, [> error]) Result.t Lwt.t
+  val push: t:t -> item:item -> unit -> position result Lwt.t
   (** [push t item] pushes [item] onto the ring [t] but doesn't expose it to
       the Consumer.
       [`Ok position] means the update has been safely written to the block device
@@ -99,20 +103,20 @@ end
 module type CONSUMER = sig
   include RING
 
-  val suspend: t -> (unit, [> error]) Result.t Lwt.t
+  val suspend: t -> unit result Lwt.t
   (** [suspend t] signals that the producer should stop pushing items.
       Note this function returns before the producer has acknowledged.
       The result `Retry means that a previous call to [resume] has not
       been acknowledged; the client should retry. *)
 
-  val resume: t -> (unit, [> error]) Result.t Lwt.t
+  val resume: t -> unit result Lwt.t
   (** [resume t] signals that a producer may again start pushing items.
       This call does not wait for an acknowledgement from the producer.
       Note it is not an error to resume an already-resumed queue.
       The result `Retry means that a previous call to [suspend] has not
       been acknowledged; the client should retry. *)
 
-  val pop: t:t -> ?from:position -> unit -> ((position * item), [> error]) Result.t Lwt.t
+  val pop: t:t -> ?from:position -> unit -> (position * item) result Lwt.t
   (** [peek t ?position ()] returns a pair [(position, item)] where [item] is the
       next item on the ring after [from]. Repeated calls to [pop] will return the
       same [item].
@@ -120,7 +124,7 @@ module type CONSUMER = sig
       [`Retry] means there is no item available at the moment and the client should
       try again later. *)
 
-  val fold: f:(item -> 'a -> 'a) -> t:t -> ?from:position -> init:'a -> unit -> ((position * 'a), [> error]) Result.t Lwt.t
+  val fold: f:(item -> 'a -> 'a) -> t:t -> ?from:position -> init:'a -> unit -> (position * 'a) result Lwt.t
   (** [peek_all f t ?position init ()] folds [f] across all the values that can be
       immediately [peek]ed from the ring. If any of the [fold] operations fail
       then the whole operation fails. The successful result includes the final
@@ -140,7 +144,9 @@ module type JOURNAL = sig
 
   type error = [ `Retry | `Suspended | `Msg of string ]
 
-  val start: disk -> (operation list -> (unit, error) Result.t Lwt.t) -> (t, [> error]) Result.t Lwt.t
+  type 'a result = ('a, error) Result.t
+
+  val start: disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing
       function which will be applied at-least-once to every item in the journal. *)
 
@@ -149,7 +155,7 @@ module type JOURNAL = sig
 
   type waiter = unit -> unit Lwt.t
 
-  val push: t -> operation -> (waiter, [> error]) Result.t Lwt.t
+  val push: t -> operation -> waiter result Lwt.t
   (** Append an operation to the journal. When this returns, the operation will
       be performed at-least-once before any later items are performed.
       If a client needs to wait for the operation to be completed then call
