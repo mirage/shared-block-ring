@@ -54,7 +54,11 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     | `Error `Retry -> `Error (`Msg "There was a transient failure and the operation should be retried")
     | `Error `Suspended -> `Error (`Msg "There was a transient failure caused by the ring being suspended")
     | `Error (`Msg x) -> `Error (`Msg x)
-
+  let open_error = function
+    | `Ok x -> `Ok x
+    | `Error `Retry -> `Error `Retry
+    | `Error `Suspended -> `Error `Suspended
+    | `Error (`Msg x) -> `Error (`Msg x)
   type 'a result = ('a, error) Result.t
 
   let (>>=) m f = Lwt.bind m (function
@@ -175,6 +179,7 @@ module Producer = struct
   type item = Item.t
   type error = C.error
   let pp_error = C.pp_error
+  let open_error = C.open_error
   let error_to_msg = C.error_to_msg
   type 'a result = 'a C.result
 
@@ -324,6 +329,7 @@ module Consumer = struct
   type item = Item.t
   type error = C.error
   let pp_error = C.pp_error
+  let open_error = C.open_error
   let error_to_msg = C.error_to_msg
   type 'a result = 'a C.result
 

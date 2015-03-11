@@ -53,6 +53,7 @@ module type RING = sig
   type error = [ `Retry | `Suspended | `Msg of string ]
   type 'a result = ('a, error) Result.t
   val pp_error : Format.formatter -> error -> unit
+  val open_error : 'a result -> ('a, [> error]) Result.t
   val error_to_msg : 'a result -> ('a, Result.msg) Result.t
 
   val attach: disk:disk -> unit -> t result Lwt.t
@@ -144,6 +145,7 @@ module type JOURNAL = sig
   type error = [ `Retry | `Suspended | `Msg of string ]
   type 'a result = ('a, error) Result.t
   val pp_error : Format.formatter -> error -> unit
+  val open_error : 'a result -> ('a, [> error]) Result.t
   val error_to_msg : 'a result -> ('a, Result.msg) Result.t
 
   val start: disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
