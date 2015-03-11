@@ -51,10 +51,8 @@ module type RING = sig
   (* A message on the ring *)
 
   type error = [ `Retry | `Suspended | `Msg of string ]
-(*
-  val pp_error : Format.formatter -> error -> unit
-*)
   type 'a result = ('a, error) Result.t
+  val pp_error : Format.formatter -> error -> unit
 
   val attach: disk:disk -> unit -> t result Lwt.t
   (** [attach blockdevice] attaches to a previously-created shared ring on top
@@ -143,8 +141,8 @@ module type JOURNAL = sig
   (** An idempotent operation which we will perform at-least-once *)
 
   type error = [ `Retry | `Suspended | `Msg of string ]
-
   type 'a result = ('a, error) Result.t
+  val pp_error : Format.formatter -> error -> unit
 
   val start: disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing

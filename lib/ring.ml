@@ -45,6 +45,11 @@ let alloc sector_size =
 module Common(Log: S.LOG)(B: S.BLOCK) = struct
   type error = [ `Retry | `Suspended | `Msg of string ]
 
+  let pp_error fmt = function
+    | `Retry -> Format.pp_print_string fmt "Retry"
+    | `Suspended -> Format.pp_print_string fmt "Suspended"
+    | `Msg x -> Format.pp_print_string fmt x
+
   type 'a result = ('a, error) Result.t
 
   let (>>=) m f = Lwt.bind m (function
@@ -164,6 +169,7 @@ module Producer = struct
   let compare = C.compare
   type item = Item.t
   type error = C.error
+  let pp_error = C.pp_error
   type 'a result = 'a C.result
 
   type t = {
@@ -311,6 +317,7 @@ module Consumer = struct
   let compare = C.compare
   type item = Item.t
   type error = C.error
+  let pp_error = C.pp_error
   type 'a result = 'a C.result
 
   type t = {

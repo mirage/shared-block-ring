@@ -12,7 +12,10 @@ module Make
   open R
 
   type error = [ `Retry | `Suspended | `Msg of string ]
-
+  let pp_error fmt = function
+    | `Retry -> Format.pp_print_string fmt "Retry"
+    | `Suspended -> Format.pp_print_string fmt "Suspended"
+    | `Msg x -> Format.pp_print_string fmt x
   type 'a result = ('a, error) Result.t
 
   type waiter = unit -> unit Lwt.t
