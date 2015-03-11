@@ -19,6 +19,9 @@ type ('a, 'b) t = [
 
 include Monad.S2 with type ('a, 'b) t := ('a, 'b) t
 
+type msg = [ `Msg of string ]
+val msg: string -> msg
+
 val ok: 'a -> ('a, 'b) t
 val fail: 'b -> ('a, 'b) t
 

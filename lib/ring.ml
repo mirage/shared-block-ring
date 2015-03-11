@@ -49,6 +49,11 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     | `Retry -> Format.pp_print_string fmt "Retry"
     | `Suspended -> Format.pp_print_string fmt "Suspended"
     | `Msg x -> Format.pp_print_string fmt x
+  let error_to_msg = function
+    | `Ok x -> `Ok x
+    | `Error `Retry -> `Error (`Msg "There was a transient failure and the operation should be retried")
+    | `Error `Suspended -> `Error (`Msg "There was a transient failure caused by the ring being suspended")
+    | `Error (`Msg x) -> `Error (`Msg x)
 
   type 'a result = ('a, error) Result.t
 
@@ -170,6 +175,7 @@ module Producer = struct
   type item = Item.t
   type error = C.error
   let pp_error = C.pp_error
+  let error_to_msg = C.error_to_msg
   type 'a result = 'a C.result
 
   type t = {
@@ -318,6 +324,7 @@ module Consumer = struct
   type item = Item.t
   type error = C.error
   let pp_error = C.pp_error
+  let error_to_msg = C.error_to_msg
   type 'a result = 'a C.result
 
   type t = {

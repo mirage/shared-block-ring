@@ -25,6 +25,9 @@ let return x = `Ok x
 let ok = return
 let fail x = `Error x
 
+type msg = [ `Msg of string ]
+let msg x = `Msg x
+
 let all xs =
   let rec loop acc = function
   | [] -> return (List.rev acc)
