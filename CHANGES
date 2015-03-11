@@ -1,5 +1,6 @@
 2.0.0 (unreleased)
 - Ring is now functorised over a LOGging module
+- Switch to a Rresult-like error type
 
 1.0.0 (06-3-2015)
 - initial stable API, including both a "Ring" and a "Journal"
