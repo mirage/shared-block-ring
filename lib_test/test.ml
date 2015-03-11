@@ -110,17 +110,17 @@ let test_push_pop length batch () =
       | 0 -> return ()
       | n ->
         let open Lwt in
-        Consumer.pop ~t:consumer () >>= function
-        | `Ok _ | `Error _ -> failwith "empty pop"
-        | `Retry ->
+        ( Consumer.pop ~t:consumer () >>= function
+          | `Error `Retry -> return ()
+          | `Ok _ | `Error _ -> failwith "empty pop" ) >>= fun () ->
         let rec push = function
         | 0 -> return ()
         | m ->
           ( Producer.push ~t:producer ~item:toobig () >>= function
-            | `TooBig -> return ()
+            | `Error _ -> return ()
             | _ -> failwith "push" ) >>= fun () ->
           Producer.push ~t:producer ~item:payload () >>= function
-          | `Error _ | `TooBig | `Retry | `Suspend -> failwith "push"
+          | `Error _ -> failwith "push"
           | `Ok position ->
             (Producer.advance ~t:producer ~position () >>= fun unit ->
              get_ok unit;
@@ -132,7 +132,7 @@ let test_push_pop length batch () =
         | 0 -> return ()
         | m ->
           Consumer.pop ~t:consumer () >>= function
-          | `Error _ | `Retry -> failwith "pop"
+          | `Error _ -> failwith "pop"
           | `Ok (consumer_val,buffer) ->
             assert_equal ~printer:(fun x -> x) payload buffer;
 	    Consumer.advance ~t:consumer ~position:consumer_val () >>= function
@@ -148,8 +148,8 @@ let test_push_pop length batch () =
     let rec loop acc =
       let open Lwt in
       Producer.push ~t:producer ~item:payload () >>= function
-      | `Retry -> return acc
-      | `Error _ | `TooBig | `Suspend -> failwith "counting the number of pushes"
+      | `Error `Retry -> return acc
+      | `Error _ -> failwith "counting the number of pushes"
       | `Ok position ->
         (Producer.advance ~t:producer ~position () >>= fun unit ->
          get_ok unit;
@@ -188,13 +188,11 @@ let test_suspend () =
     (* consumer requests a suspend *)
     Consumer.suspend consumer >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
-    | `Retry -> failwith "Consumer.suspend retry"
     | `Ok () ->
     (* it is not possible to request a resume before the ack *)
-    Consumer.resume consumer >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
-    | `Ok () -> failwith "it shouldn't be possible to immediately resume"
-    | `Retry ->
+    ( Consumer.resume consumer >>= function
+      | `Error `Retry -> return ()
+      | _ -> failwith "Consumer.resume" ) >>= fun () ->
     (* but the producer hasn't seen it so the queue is still running *)
     Consumer.state consumer >>= function
     | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
@@ -211,8 +209,8 @@ let test_suspend () =
     | `Ok `Running -> failwith "everyone should agree the queue is suspended"
     | `Ok `Suspended ->
     Consumer.resume consumer >>= function
+    | `Error `Retry -> failwith "Consumer.resume failed with Retry"
     | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
-    | `Retry -> failwith "Consumer.resume failed with Retry"
     | `Ok () ->
     (* The queue is still suspended until the producer acknowledges *)
     Consumer.state consumer >>= function
@@ -220,10 +218,10 @@ let test_suspend () =
     | `Ok `Running -> failwith "queue resumed too early"
     | `Ok `Suspended ->
     (* The queue cannot be re-suspended until the producer has seen the resume *)
-    Consumer.suspend consumer >>= function
+    ( Consumer.suspend consumer >>= function
+    | `Error `Retry -> return ()
     | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
-    | `Ok () -> failwith "Consumer.suspend succeeded too early"
-    | `Retry ->
+    | `Ok () -> failwith "Consumer.suspend succeeded too early" ) >>= fun () ->
     (* The producer notices it immediately too *)
     Producer.state producer >>= function
     | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
@@ -245,24 +243,18 @@ let test_journal () =
       List.iter (fun x ->
         assert (x = "hello")
       ) xs;
-      return () in
-    let open Lwt in
+      return (`Ok ()) in
     J.start device perform
     >>= fun j ->
     J.push j "hello"
-    >>= fun wait ->
-    wait ()
+    >>= fun w ->
+    let open Lwt in
+    w ()
     >>= fun () ->
-    Lwt.catch
-      (fun () ->
-        J.push j (String.create (Int64.to_int size))
-        >>= fun _ ->
-        failwith "pushed toobig to journal"
-      ) (fun _ ->
-        J.shutdown j
-        >>= fun () ->
-        return ()
-      ) in
+    J.push j (String.create (Int64.to_int size))
+    >>= fun t ->
+    ignore(get_error t);
+    J.shutdown j in
   Lwt_main.run t
 
 let rec allpairs xs ys = match xs with
