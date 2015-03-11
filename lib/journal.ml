@@ -11,20 +11,14 @@ module Make
   module R = Ring.Make(Log)(Block)(Op)
   open R
 
-  type error = [ `Retry | `Suspended | `Msg of string ]
+  type error = [ `Msg of string ]
   let pp_error fmt = function
-    | `Retry -> Format.pp_print_string fmt "Retry"
-    | `Suspended -> Format.pp_print_string fmt "Suspended"
     | `Msg x -> Format.pp_print_string fmt x
   let error_to_msg = function
     | `Ok x -> `Ok x
-    | `Error `Retry -> `Error (`Msg "There was a transient failure and the operation should be retried")
-    | `Error `Suspended -> `Error (`Msg "There was a transient failure caused by the ring being suspended")
     | `Error (`Msg x) -> `Error (`Msg x)
   let open_error = function
     | `Ok x -> `Ok x
-    | `Error `Retry -> `Error `Retry
-    | `Error `Suspended -> `Error `Suspended
     | `Error (`Msg x) -> `Error (`Msg x)
   type 'a result = ('a, error) Result.t
 
@@ -44,9 +38,9 @@ module Make
     (* Internally handle `Error `Retry by sleeping on the cvar.
        All other errors are fatal. *)
     bind: 'a 'b 'c 'd. 
-      (unit -> (('a, [< error] as 'd) Result.t Lwt.t))
-      -> ('a -> ('b, [> error] as 'c) Result.t Lwt.t)
-      -> ('b, [> error] as 'c) Result.t Lwt.t
+      (unit -> (('a, [< R.Consumer.error] as 'd) Result.t Lwt.t))
+      -> ('a -> ('b, [> R.Consumer.error] as 'c) Result.t Lwt.t)
+      -> ('b, [> R.Consumer.error] as 'c) Result.t Lwt.t
   }
 
   let perform t items () =
@@ -115,7 +109,7 @@ module Make
     replay t
     >>|= fun () ->
     (* Run a background thread processing items from the journal *)
-    let (_: (unit, error) Result.t Lwt.t) =
+    let (_: (unit, R.Consumer.error) Result.t Lwt.t) =
       let rec forever () =
         ( if t.data_available
           then return ()
@@ -132,6 +126,10 @@ module Make
         end in
       forever () in
     return (`Ok t)
+  let start filename perform =
+    start filename perform
+    >>= fun x ->
+    return (R.Consumer.error_to_msg x)
 
   let shutdown t =
     t.please_shutdown <- true;
@@ -176,5 +174,10 @@ module Make
             wait () in
         return (`Ok wait)
     end
-  let push t op = Lwt_mutex.with_lock t.m (fun () -> push t op)
+  let push t op =
+    Lwt_mutex.with_lock t.m (fun () ->
+      push t op
+      >>= fun ret ->
+      return (R.Consumer.error_to_msg ret)
+    )
 end

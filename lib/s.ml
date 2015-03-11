@@ -142,7 +142,7 @@ module type JOURNAL = sig
   type operation
   (** An idempotent operation which we will perform at-least-once *)
 
-  type error = [ `Retry | `Suspended | `Msg of string ]
+  type error = [ `Msg of string ]
   type 'a result = ('a, error) Result.t
   val pp_error : Format.formatter -> error -> unit
   val open_error : 'a result -> ('a, [> error]) Result.t
