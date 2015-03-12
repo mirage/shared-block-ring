@@ -381,11 +381,10 @@ module Consumer = struct
       return (`Ok ())
 
   let state t =
-    let open Lwt in
+    let open C in
     C.get_producer t.disk t.sector
-    >>= function
-    | `Ok p -> return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
-    | `Error x -> return (`Error x)
+    >>= fun p ->
+    return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
 
   let resume (t: t) =
     let open C in
