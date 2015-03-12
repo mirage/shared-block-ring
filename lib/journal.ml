@@ -120,8 +120,11 @@ module Make
           Lwt_condition.broadcast t.cvar ();
           return (`Ok ())
         end else begin
-          replay t
-          >>|= fun () ->
+          (* If we fail to process an item, we can't make progress
+             but we can keep trying and keep responding to shutdown
+             requests. *)
+          replay t ()
+          >>= fun _ ->
           forever ()
         end in
       forever () in
