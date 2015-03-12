@@ -234,15 +234,19 @@ let test_journal_replay () =
     let open Lwt_result in
     Block.connect name >>= fun device ->
     let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
+    let t, u = Lwt.task () in
     let perform = function
       | [] -> return (`Ok ())
-      | _ -> fail Not_found in
+      | _ ->
+        Lwt.wakeup_later u ();
+        fail Not_found in
     J.start device perform
     >>= fun j ->
     J.push j "hello"
     >>= fun _ ->
     (* The operation is not performed *)
     let open Lwt in
+    t >>= fun () ->
     J.shutdown j
     >>= fun () ->
     let open Lwt_result in
