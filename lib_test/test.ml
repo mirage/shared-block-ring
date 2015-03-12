@@ -46,7 +46,7 @@ let fill_with_message buffer message =
 
 let fresh_file nsectors =
   let name = find_unused_file () in
-  Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY ] 0o0666 >>= fun fd ->
+  Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY; Lwt_unix.O_TRUNC ] 0o0666 >>= fun fd ->
   (* Write the last sector to make sure the file has the intended size *)
   Lwt_unix.LargeFile.lseek fd Int64.(sub nsectors 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
   let sector = alloc 512 in
