@@ -218,7 +218,12 @@ let test_journal () =
     J.push j (String.create (Int64.to_int size))
     >>= fun t ->
     ignore(get_error t);
-    J.shutdown j in
+    J.shutdown j
+    >>= fun () ->
+    J.push j ""
+    >>= fun t ->
+    ignore(get_error t);
+    return () in
   Lwt_main.run t
 
 let test_journal_replay () =
