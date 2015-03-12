@@ -35,6 +35,10 @@ let all xs =
   | `Error x :: _ -> `Error x in
   loop [] xs
 
-let ok_or_failwith = function
-  | `Ok x -> x
-  | `Error x -> failwith x
+let get_ok = function
+| `Ok x -> x
+| `Error _ -> raise (Invalid_argument "get_ok encountered an `Error")
+
+let get_error = function
+| `Error x -> x
+| `Ok _ -> raise (Invalid_argument "get_error encountered an `Ok")

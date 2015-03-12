@@ -18,14 +18,7 @@ open Lwt
 open OUnit
 
 (* Let's try to adopt the conventions of Rresult.R *)
-
-let get_ok = function
-| `Ok x -> x
-| `Error _ -> raise (Invalid_argument "get_ok encountered an `Error")
-
-let get_error = function
-| `Error x -> x
-| `Ok _ -> raise (Invalid_argument "get_error encountered an `Ok")
+let get_ok, get_error = Shared_block.Result.(get_ok, get_error)
 
 module Lwt_result = struct
   let (>>=) m f = m >>= fun x -> f (get_ok x)
@@ -110,35 +103,28 @@ let test_push_pop length batch () =
       | 0 -> return ()
       | n ->
         let open Lwt in
-        ( Consumer.pop ~t:consumer () >>= function
-          | `Error `Retry -> return ()
-          | `Ok _ | `Error _ -> failwith "empty pop" ) >>= fun () ->
+        Consumer.pop ~t:consumer () >>= fun r ->
+        assert_equal `Retry (get_error r);
         let rec push = function
         | 0 -> return ()
         | m ->
-          ( Producer.push ~t:producer ~item:toobig () >>= function
-            | `Error _ -> return ()
-            | _ -> failwith "push" ) >>= fun () ->
-          Producer.push ~t:producer ~item:payload () >>= function
-          | `Error _ -> failwith "push"
-          | `Ok position ->
-            (Producer.advance ~t:producer ~position () >>= fun unit ->
-             get_ok unit;
-             return () 
-            ) >>= fun () ->
-            push (m - 1) in
+          Producer.push ~t:producer ~item:toobig () >>= fun r ->
+          ignore(get_error r);
+          Producer.push ~t:producer ~item:payload () >>= fun r ->
+          let position = get_ok r in
+          Producer.advance ~t:producer ~position () >>= fun unit ->
+          get_ok unit;
+          push (m - 1) in
         push batch >>= fun () ->
         let rec pop = function
         | 0 -> return ()
         | m ->
-          Consumer.pop ~t:consumer () >>= function
-          | `Error _ -> failwith "pop"
-          | `Ok (consumer_val,buffer) ->
-            assert_equal ~printer:(fun x -> x) payload buffer;
-	    Consumer.advance ~t:consumer ~position:consumer_val () >>= function
-	    | `Ok () ->
-              pop (m - 1)
-	    | `Error _ -> failwith "pop" in
+          Consumer.pop ~t:consumer () >>= fun r ->
+          let consumer_val, buffer = get_ok r in
+          assert_equal ~printer:(fun x -> x) payload buffer;
+	  Consumer.advance ~t:consumer ~position:consumer_val () >>= fun r ->
+          get_ok r;
+          pop (m - 1) in
         pop batch >>= fun () ->
         loop (n - 1) in
     (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
@@ -151,10 +137,8 @@ let test_push_pop length batch () =
       | `Error `Retry -> return acc
       | `Error _ -> failwith "counting the number of pushes"
       | `Ok position ->
-        (Producer.advance ~t:producer ~position () >>= fun unit ->
-         get_ok unit;
-         return ()
-        ) >>= fun () ->
+        Producer.advance ~t:producer ~position () >>= fun unit ->
+        get_ok unit;
         loop (acc + 1) in
     loop 0 >>= fun n ->
     let expected = Int64.(to_int (div (sub size 1536L) (logand (lognot 3L) (of_int (String.length payload + 7))))) in
@@ -176,57 +160,37 @@ let test_suspend () =
     Consumer.attach ~disk () >>= fun consumer ->
     (* consumer thinks the queue is running *)
     let open Lwt in
-    Consumer.state consumer >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
-    | `Ok `Suspended -> failwith "queue is suspended too early"
-    | `Ok `Running ->
+    Consumer.state consumer >>= fun r ->
+    assert_equal `Running (get_ok r);
     (* so does the producer *)
-    Producer.state producer >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
-    | `Ok `Suspended -> failwith "queue is suspended too early"
-    | `Ok `Running ->
+    Producer.state producer >>= fun r ->
+    assert_equal `Running (get_ok r);
     (* consumer requests a suspend *)
-    Consumer.suspend consumer >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
-    | `Ok () ->
+    Consumer.suspend consumer >>= fun r ->
+    get_ok r;
     (* it is not possible to request a resume before the ack *)
-    ( Consumer.resume consumer >>= function
-      | `Error `Retry -> return ()
-      | _ -> failwith "Consumer.resume" ) >>= fun () ->
+    Consumer.resume consumer >>= fun r ->
+    assert_equal `Retry (get_error r);
     (* but the producer hasn't seen it so the queue is still running *)
-    Consumer.state consumer >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
-    | `Ok `Suspended -> failwith "queue is suspended too early"
-    | `Ok `Running ->
+    Consumer.state consumer >>= fun r ->
+    assert_equal `Running (get_ok r);
     (* when the producer looks, it sees the suspend *)
-    Producer.state producer >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
-    | `Ok `Running -> failwith "queue is still running"
-    | `Ok `Suspended ->
+    Producer.state producer >>= fun r ->
+    assert_equal `Suspended (get_ok r);
     (* now the consumer sees the producer has suspended *)
-    Consumer.state consumer >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
-    | `Ok `Running -> failwith "everyone should agree the queue is suspended"
-    | `Ok `Suspended ->
-    Consumer.resume consumer >>= function
-    | `Error `Retry -> failwith "Consumer.resume failed with Retry"
-    | `Error x -> failwith (Printf.sprintf "Consumer.resume %s" name)
-    | `Ok () ->
+    Consumer.state consumer >>= fun r ->
+    assert_equal `Suspended (get_ok r);
+    Consumer.resume consumer >>= fun r ->
+    get_ok r;
     (* The queue is still suspended until the producer acknowledges *)
-    Consumer.state consumer >>= function
-    | `Error x -> failwith (Printf.sprintf "Consumer.state %s" name)
-    | `Ok `Running -> failwith "queue resumed too early"
-    | `Ok `Suspended ->
+    Consumer.state consumer >>= fun r ->
+    assert_equal `Suspended (get_ok r);
     (* The queue cannot be re-suspended until the producer has seen the resume *)
-    ( Consumer.suspend consumer >>= function
-    | `Error `Retry -> return ()
-    | `Error x -> failwith (Printf.sprintf "Consumer.suspend %s" name)
-    | `Ok () -> failwith "Consumer.suspend succeeded too early" ) >>= fun () ->
+    Consumer.suspend consumer >>= fun r ->
+    assert_equal `Retry (get_error r);
     (* The producer notices it immediately too *)
-    Producer.state producer >>= function
-    | `Error x -> failwith (Printf.sprintf "Producer.state %s" name)
-    | `Ok `Suspended -> failwith "producer should have seen the resume"
-    | `Ok `Running ->
+    Producer.state producer >>= fun r ->
+    assert_equal `Running (get_ok r);
     
     return () in
   Lwt_main.run t
@@ -262,12 +226,6 @@ let rec allpairs xs ys = match xs with
   | x :: xs -> List.map (fun y -> x, y) ys @ (allpairs xs ys)
 
 let _ =
-  let verbose = ref false in
-  Arg.parse [
-    "-verbose", Arg.Unit (fun _ -> verbose := true), "Run in verbose mode";
-  ] (fun x -> Printf.fprintf stderr "Ignoring argument: %s" x)
-  "Test shared block ring";
-
   let test_push_pops = List.map (fun (length, batch) ->
     Printf.sprintf "push pop %d bytes in batches of %d" length batch >:: (test_push_pop length batch)
   ) (allpairs interesting_lengths interesting_batch_sizes) in
@@ -276,4 +234,4 @@ let _ =
     "test suspend" >:: test_suspend;
     "test journal" >:: test_journal;
   ] @ test_push_pops in
-  run_test_tt ~verbose:!verbose suite
+  run_test_tt suite

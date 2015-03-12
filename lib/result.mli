@@ -27,4 +27,5 @@ val fail: 'b -> ('a, 'b) t
 
 val all: ('a, 'b) t list -> ('a list, 'b) t
 
-val ok_or_failwith: ('a, string) t -> 'a
+val get_ok: ('a, 'b) t -> 'a
+val get_error: ('a, 'b) t -> 'b
