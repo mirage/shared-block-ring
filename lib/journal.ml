@@ -148,7 +148,7 @@ module Make
   let rec push t item =
     let (>>|=) = t.bind in
     if t.please_shutdown
-    then fail (Failure "journal shutdown in progress")
+    then return (`Error (`Msg "journal shutdown in progress"))
     else begin
       Producer.push ~t:t.p ~item
       >>|= fun position ->
