@@ -12,6 +12,7 @@ module Make
   open R
 
   type error = [ `Msg of string ]
+  (*BISECT-IGNORE-BEGIN*)
   let pp_error fmt = function
     | `Msg x -> Format.pp_print_string fmt x
   let error_to_msg = function
@@ -21,6 +22,7 @@ module Make
     | `Ok x -> `Ok x
     | `Error (`Msg x) -> `Error (`Msg x)
   type 'a result = ('a, error) Result.t
+  (*BISECT-IGNORE-END*)
 
   type waiter = unit -> unit Lwt.t
 

@@ -45,6 +45,7 @@ let alloc sector_size =
 module Common(Log: S.LOG)(B: S.BLOCK) = struct
   type error = [ `Retry | `Suspended | `Msg of string ]
 
+  (*BISECT-IGNORE-BEGIN*)
   let pp_error fmt = function
     | `Retry -> Format.pp_print_string fmt "Retry"
     | `Suspended -> Format.pp_print_string fmt "Suspended"
@@ -60,6 +61,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     | `Error `Suspended -> `Error `Suspended
     | `Error (`Msg x) -> `Error (`Msg x)
   type 'a result = ('a, error) Result.t
+  (*BISECT-IGNORE-END*)
 
   let (>>=) m f = Lwt.bind m (function
     | `Ok x -> f x
