@@ -221,6 +221,36 @@ let test_journal () =
     J.shutdown j in
   Lwt_main.run t
 
+let test_journal_replay () =
+  let t =
+    fresh_file size
+    >>= fun name ->
+
+    let open Lwt_result in
+    Block.connect name >>= fun device ->
+    let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
+    let perform = function
+      | [] -> return (`Ok ())
+      | _ -> fail Not_found in
+    J.start device perform
+    >>= fun j ->
+    J.push j "hello"
+    >>= fun _ ->
+    (* The operation is not performed *)
+    let open Lwt in
+    J.shutdown j
+    >>= fun () ->
+    let open Lwt_result in
+    (* Now pretend that we've just crashed and restarted *)
+    let ok = ref false in
+    let perform _ = ok := true; return (`Ok ()) in
+    J.start device perform
+    >>= fun j ->
+    (* The operation should have been performed *)
+    assert_equal ~printer:string_of_bool true !ok;
+    J.shutdown j in
+  Lwt_main.run t
+
 let rec allpairs xs ys = match xs with
   | [] -> []
   | x :: xs -> List.map (fun y -> x, y) ys @ (allpairs xs ys)
@@ -233,5 +263,6 @@ let _ =
   let suite = "shared-block-ring" >::: [
     "test suspend" >:: test_suspend;
     "test journal" >:: test_journal;
+    "test journal replay" >:: test_journal_replay;
   ] @ test_push_pops in
   run_test_tt suite
