@@ -17,23 +17,7 @@ type ('a, 'b) t = [
 | `Error of 'b
 ]
 
-let ( >>= ) m f = match m with
-| `Ok x -> f x
-| `Error y -> `Error y
-
-let return x = `Ok x
-let ok = return
-let fail x = `Error x
-
 type msg = [ `Msg of string ]
-let msg x = `Msg x
-
-let all xs =
-  let rec loop acc = function
-  | [] -> return (List.rev acc)
-  | `Ok x :: xs -> loop (x :: acc) xs
-  | `Error x :: _ -> `Error x in
-  loop [] xs
 
 let get_ok = function
 | `Ok x -> x

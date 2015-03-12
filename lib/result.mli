@@ -17,15 +17,7 @@ type ('a, 'b) t = [
 | `Error of 'b
 ]
 
-include Monad.S2 with type ('a, 'b) t := ('a, 'b) t
-
 type msg = [ `Msg of string ]
-val msg: string -> msg
-
-val ok: 'a -> ('a, 'b) t
-val fail: 'b -> ('a, 'b) t
-
-val all: ('a, 'b) t list -> ('a list, 'b) t
 
 val get_ok: ('a, 'b) t -> 'a
 val get_error: ('a, 'b) t -> 'b
