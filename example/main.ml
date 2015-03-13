@@ -15,7 +15,13 @@ open Lwt
 
 let project_url = "http://github.com/djs55/shared-block-ring"
 
-module R = Shared_block.Ring.Make(Block)(struct
+module Log = struct
+  let debug fmt = Printf.ksprintf (fun s -> print_endline s) fmt
+  let info  fmt = Printf.ksprintf (fun s -> print_endline s) fmt
+  let error fmt = Printf.ksprintf (fun s -> print_endline s) fmt
+end
+
+module R = Shared_block.Ring.Make(Log)(Block)(struct
   type t = string
   let to_cstruct x =
     let r = Cstruct.create (String.length x) in
@@ -25,38 +31,37 @@ module R = Shared_block.Ring.Make(Block)(struct
 end)
 open R
 
+let rec bind fn f = fn () >>= function
+  | `Error `Suspended -> fail (Failure "Ring is suspended")
+  | `Error (`Msg x) -> fail (Failure x)
+  | `Error `Retry ->
+    Lwt_unix.sleep 5.
+    >>= fun () ->
+    bind fn f
+  | `Ok x -> f x
+let (>>|=) = bind
+
 let produce filename interval =
   let t =
     Block.connect filename
     >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Failed to open %s" filename))
     | `Ok disk ->
-    Producer.attach ~disk ()
-    >>= function
-    | `Error x -> fail (Failure x)
-    | `Ok p ->
-      let rec loop () =
-        Lwt_io.read_line Lwt_io.stdin
-        >>= fun item ->
-        let rec write () =
-          Producer.push ~t:p ~item ()
-          >>= function
-          | `TooBig -> fail (Failure "input data is too large for this ring")
-          | `Suspend -> fail (Failure "ring is suspended, cannot push")
-          | `Retry ->
-            Lwt_unix.sleep (float_of_int interval)
-            >>= fun () ->
-            write ()
-          | `Error msg -> fail (Failure msg)
-          | `Ok position ->
-            ( Producer.advance ~t:p ~position ()
-              >>= function
-              | `Error msg -> fail (Failure msg)
-              | `Ok () -> return () ) in
-        write ()
-        >>= fun () ->
-        loop () in
+    Producer.attach ~disk
+    >>|= fun p ->
+    let rec loop () =
+      Lwt_io.read_line Lwt_io.stdin
+      >>= fun item ->
+      let rec write () =
+        Producer.push ~t:p ~item
+        >>|= fun position ->
+        Producer.advance ~t:p ~position
+        >>|= fun () ->
+        return () in
+      write ()
+      >>= fun () ->
       loop () in
+    loop () in
   try
     `Ok (Lwt_main.run t)
   with e ->
@@ -68,26 +73,17 @@ let consume filename interval =
     >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Failed to open %s" filename))
     | `Ok disk ->
-    Consumer.attach ~disk ()
-    >>= function
-    | `Error x -> fail (Failure x)
-    | `Ok c ->
-      let rec loop () =
-        Consumer.pop ~t:c ()
-        >>= function
-        | `Retry ->
-          Lwt_unix.sleep (float_of_int interval)
-          >>= fun () ->
-          loop ()
-        | `Error msg -> fail (Failure msg)
-        | `Ok(position, item) ->
-          Lwt_io.write_line Lwt_io.stdout item
-          >>= fun () ->
-          ( Consumer.advance ~t:c ~position ()
-            >>= function
-            | `Error msg -> fail (Failure msg)
-            | `Ok () -> loop () ) in
+    Consumer.attach ~disk
+    >>|= fun c ->
+    let rec loop () =
+      Consumer.pop ~t:c
+      >>|= fun (position, item) ->
+      Lwt_io.write_line Lwt_io.stdout item
+      >>= fun () ->
+      Consumer.advance ~t:c ~position
+      >>|= fun () ->
       loop () in
+    loop () in
   try
     `Ok (Lwt_main.run t)
   with e ->
@@ -99,9 +95,7 @@ let create filename =
     >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
     | `Ok disk ->
-    Producer.create ~disk () >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Producer.create %s: %s" filename x))
-    | `Ok _ -> return () in
+    Producer.create ~disk >>|= fun _ -> return () in
   try
     `Ok (Lwt_main.run t)
   with e ->
@@ -113,34 +107,19 @@ let diagnostics filename =
     >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
     | `Ok disk ->
-    Consumer.attach ~disk ()
-    >>= function
-    | `Error x -> fail (Failure x)
-    | `Ok c ->
-      let item = function
-      | `Retry ->
-        Lwt_io.write_line Lwt_io.stdout "-- there are no more items"
-        >>= fun () ->
-        return None
-      | `Error msg -> fail (Failure msg)
-      | `Ok (position, buf) ->
-        Lwt_io.write_line Lwt_io.stdout (Printf.sprintf "%s: %s" (Sexplib.Sexp.to_string (Consumer.sexp_of_position position)) buf)
-        >>= fun () ->
-        return (Some position) in
-      Consumer.pop ~t:c ()
-      >>= fun i ->
-      item i
+    Consumer.attach ~disk
+    >>|= fun c ->
+    let rec loop ?from () =
+      Consumer.pop ~t:c ?from ()
       >>= function
-      | None -> return ()
-      | Some pos ->
-        let rec loop pos =
-          Consumer.pop ~t:c ~from:pos ()
-          >>= fun i ->
-          item i
-          >>= function
-          | None -> return ()
-          | Some pos -> loop pos in
-        loop pos in
+      | `Error `Retry ->
+        Lwt_io.write_line Lwt_io.stdout "-- there are no more items"
+      | x ->
+        (fun () -> return x) >>|= fun (from, buf) ->
+        Lwt_io.write_line Lwt_io.stdout (Printf.sprintf "%s: %s" (Sexplib.Sexp.to_string (Consumer.sexp_of_position from)) buf)
+        >>= fun () ->
+        loop ~from () in
+    loop () in
   try
     `Ok (Lwt_main.run t)
   with e ->

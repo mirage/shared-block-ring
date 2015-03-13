@@ -1,6 +1,6 @@
 OASISFormat: 0.3
 Name:        shared-block-ring
-Version:     1.0.0
+Version:     2.0.0
 Synopsis:    Simple persistent queue over a block device
 Authors:     David Scott
 License:     ISC
@@ -12,7 +12,7 @@ Library shared_block
   CompiledObject:     best
   Path:               lib
   Findlibname:        shared-block-ring
-  Modules:            Ring, Journal, S
+  Modules:            Ring, Journal, S, Monad, Result
   BuildDepends:       cstruct, lwt, mirage-types, io-page, sexplib, sexplib.syntax, bisect
 
 Executable "shared-block-ring"
