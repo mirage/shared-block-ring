@@ -50,15 +50,20 @@ module Make
       (fun () -> t.perform items) 
       (fun e ->
          let msg = Printexc.to_string e in
-         error "Failed to process journal item: %s" msg;
          return (`Error (`Msg msg))
-      )
+      ) >>= function
+    | `Ok x -> return (`Ok x)
+    | `Error (`Msg x) ->
+      error "Failed to process journal item: %s" x;
+      return (`Error (`Msg x))
 
   let replay t () =
     let (>>|=) = t.bind in
     t.data_available <- false;
     Consumer.fold ~f:(fun x y -> x :: y) ~t:t.c ~init:[]
     >>|= fun (position, items) ->
+    (* Note we want to apply the items in the original order *)
+    let items = List.rev items in
     info "There are %d items in the journal to replay" (List.length items);
     perform t items
     >>|= fun () ->
