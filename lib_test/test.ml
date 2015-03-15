@@ -80,6 +80,14 @@ module Op = struct
     c
   let of_cstruct x = Some (Cstruct.to_string x)
 end
+module Int = struct
+  type t = int32
+  let to_cstruct x =
+    let c = Cstruct.create 4 in
+    Cstruct.LE.set_uint32 c 0 x;
+    c
+  let of_cstruct x = Some (Cstruct.LE.get_uint32 x 0)
+end
 
 module R = Shared_block.Ring.Make(Log)(Block)(Op)
 open R
@@ -260,6 +268,54 @@ let test_journal_replay () =
     J.shutdown j in
   Lwt_main.run t
 
+(* Check that items are processed from the journal in the order they
+   went in. *)
+let test_journal_order () =
+  let t =
+    fresh_file size
+    >>= fun name ->
+
+    let open Lwt_result in
+    Block.connect name >>= fun device ->
+    let module J = Shared_block.Journal.Make(Log)(Block)(Int) in
+
+    let counter = ref 0l in
+    let last_flush = ref 0. in
+    let interval = 5. in
+    let perform xs =
+      let rec loop = function
+      | [] -> return (`Ok ())
+      | x :: xs ->
+        assert_equal ~printer:Int32.to_string !counter x;
+        counter := Int32.succ !counter;
+        loop xs in
+      let open Lwt in
+      Lwt_unix.sleep (max 0. (interval -. (Unix.gettimeofday () -. !last_flush)))
+      >>= fun () ->
+      last_flush := Unix.gettimeofday ();
+      loop xs in
+    J.start device perform
+    >>= fun j ->
+    J.push j 0l
+    >>= fun _ ->
+    J.push j 1l
+    >>= fun _ ->
+    J.push j 2l
+    >>= fun _ ->
+    J.push j 3l
+    >>= fun _ ->
+    J.push j 4l
+    >>= fun _ ->
+    J.push j 5l
+    >>= fun _ ->
+    J.push j 6l
+    >>= fun w ->
+    let open Lwt in
+    w ()
+    >>= fun () ->
+    J.shutdown j in
+  Lwt_main.run t
+
 let rec allpairs xs ys = match xs with
   | [] -> []
   | x :: xs -> List.map (fun y -> x, y) ys @ (allpairs xs ys)
@@ -273,5 +329,6 @@ let _ =
     "test suspend" >:: test_suspend;
     "test journal" >:: test_journal;
     "test journal replay" >:: test_journal_replay;
+    "test journal order" >:: test_journal_order;
   ] @ test_push_pops in
   run_test_tt suite
