@@ -62,6 +62,8 @@ module Make
     t.data_available <- false;
     Consumer.fold ~f:(fun x y -> x :: y) ~t:t.c ~init:[]
     >>|= fun (position, items) ->
+    (* Note we want to apply the items in the original order *)
+    let items = List.rev items in
     info "There are %d items in the journal to replay" (List.length items);
     perform t items
     >>|= fun () ->
