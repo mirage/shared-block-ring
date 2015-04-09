@@ -131,13 +131,8 @@ module type CONSUMER = sig
       [position] which can be used to consume all the items at once. *)
 end
 
-module type CLOCK = sig
-  val time: unit -> float
-  (** [time ()] returns the number of seconds since Jan 1 1970 *)
-
-  val sleep: float -> unit Lwt.t
-  (** [sleep secs] blocks for [secs] seconds *)
-end
+module type CLOCK = V1.CLOCK
+module type TIME = V1_LWT.TIME
 
 module type JOURNAL = sig
   type t

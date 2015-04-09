@@ -1,7 +1,7 @@
 open Lwt
 open Sexplib.Std
 
-module Alarm(Clock: S.CLOCK) = struct
+module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
   type t = {
     mutable wake_up_at: float;
     mutable thread: unit Lwt.t option;
@@ -26,7 +26,7 @@ module Alarm(Clock: S.CLOCK) = struct
 
   let rec countdown t =
     let now = Clock.time () in
-    Clock.sleep (t.wake_up_at -. now)
+    Time.sleep (t.wake_up_at -. now)
     >>= fun () ->
     let now = Clock.time () in
     if now >= t.wake_up_at then begin
@@ -52,6 +52,7 @@ end
 module Make
   (Log: S.LOG)
   (Block: S.BLOCK)
+  (Time: S.TIME)
   (Clock: S.CLOCK)
   (Op: S.CSTRUCTABLE) = struct
 
@@ -60,7 +61,7 @@ module Make
   module R = Ring.Make(Log)(Block)(Op)
   open R
 
-  module Alarm = Alarm(Clock)
+  module Alarm = Alarm(Time)(Clock)
 
   type error = [ `Msg of string ]
   (*BISECT-IGNORE-BEGIN*)
