@@ -1,15 +1,66 @@
 open Lwt
 open Sexplib.Std
 
+module Alarm(Clock: S.CLOCK) = struct
+  type t = {
+    mutable wake_up_at: float;
+    mutable thread: unit Lwt.t option;
+    m: Lwt_mutex.t;
+    c: unit Lwt_condition.t;
+  }
+
+  let create () =
+    let wake_up_at = 0. in
+    let thread = None in
+    let m = Lwt_mutex.create () in
+    let c = Lwt_condition.create () in
+    { wake_up_at; thread; m; c }
+
+  let rec next t =
+    let now = Clock.time () in
+    if t.wake_up_at <= now then return ()
+    else
+      Lwt_condition.wait t.c
+      >>= fun () ->
+      next t
+
+  let rec countdown t =
+    let now = Clock.time () in
+    Clock.sleep (t.wake_up_at -. now)
+    >>= fun () ->
+    let now = Clock.time () in
+    if now >= t.wake_up_at then begin
+      Lwt_condition.signal t.c ();
+      return ()
+    end else countdown t
+
+  let reset t for_how_long =
+    let now = Clock.time () in
+    let new_deadline = now +. for_how_long in
+    let old_deadline = t.wake_up_at in
+    t.wake_up_at <- new_deadline;
+    match t.thread with
+    | None ->
+      t.thread <- Some (countdown t)
+    | Some thread ->
+      if new_deadline < old_deadline then begin
+        Lwt.cancel thread;
+        t.thread <- Some (countdown t)
+      end (* otherwise it'll keep sleeping *)
+end
+
 module Make
   (Log: S.LOG)
   (Block: S.BLOCK)
+  (Clock: S.CLOCK)
   (Op: S.CSTRUCTABLE) = struct
 
   open Log
 
   module R = Ring.Make(Log)(Block)(Op)
   open R
+
+  module Alarm = Alarm(Clock)
 
   type error = [ `Msg of string ]
   (*BISECT-IGNORE-BEGIN*)
@@ -36,7 +87,9 @@ module Make
     mutable shutdown_complete: bool;
     mutable consumed: Consumer.position option;
     perform: Op.t list -> (unit, error) Result.t Lwt.t;
+    alarm: Alarm.t;
     m: Lwt_mutex.t;
+    flush_interval: float;
     (* Internally handle `Error `Retry by sleeping on the cvar.
        All other errors are fatal. *)
     bind: 'a 'b 'c 'd. 
@@ -74,7 +127,7 @@ module Make
     Lwt_condition.broadcast t.cvar ();
     return (`Ok ())
 
-  let start filename perform =
+  let start ?(flush_interval=0.) filename perform =
     let (>>|=) fn f = fn () >>= function
     | `Error `Retry -> return (`Error (`Msg "start: received `Retry"))
     | `Error `Suspended -> return (`Error (`Msg "start: received `Suspended"))
@@ -102,16 +155,21 @@ module Make
     let consumed = None in
     let m = Lwt_mutex.create () in
     let data_available = true in
+    let alarm = Alarm.create () in
     let rec bind fn f = fn () >>= function
       | `Error `Suspended -> return (`Error (`Msg "Ring is suspended"))
       | `Error (`Msg x) -> return (`Error (`Msg x))
       | `Error `Retry ->
+        (* If we're out of space then allow the journal to replay
+           immediately. *)
+        Alarm.reset alarm 0.;
         Lwt_condition.wait cvar
         >>= fun () ->
         bind fn f
       | `Ok x -> f x in
     let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
-              consumed; perform; m; data_available; bind } in
+              consumed; perform; m; data_available; bind; alarm;
+              flush_interval } in
     let (>>|=) = t.bind in
     replay t
     >>|= fun () ->
@@ -127,6 +185,9 @@ module Make
           Lwt_condition.broadcast t.cvar ();
           return (`Ok ())
         end else begin
+          (* This allows us to wait for batching *)
+          Alarm.next alarm
+          >>= fun () ->
           (* If we fail to process an item, we can't make progress
              but we can keep trying and keep responding to shutdown
              requests. *)
@@ -136,8 +197,8 @@ module Make
         end in
       forever () in
     return (`Ok t)
-  let start filename perform =
-    start filename perform
+  let start ?flush_interval filename perform =
+    start ?flush_interval filename perform
     >>= fun x ->
     return (R.Consumer.error_to_msg x)
 
@@ -160,6 +221,9 @@ module Make
     if t.please_shutdown
     then return (`Error (`Msg "journal shutdown in progress"))
     else begin
+      (* If the ring is becoming full, we want to flush.
+         Otherwise we reset the alarm timer. *)
+      Alarm.reset t.alarm t.flush_interval;
       Producer.push ~t:t.p ~item
       >>|= fun position ->
       Producer.advance ~t:t.p ~position

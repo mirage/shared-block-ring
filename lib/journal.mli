@@ -14,7 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-module Make(Log: S.LOG)(Block: S.BLOCK)(Operation: S.CSTRUCTABLE): S.JOURNAL
+module Make(Log: S.LOG)(Block: S.BLOCK)(Clock: S.CLOCK)(Operation: S.CSTRUCTABLE): S.JOURNAL
   with type disk := Block.t
    and type operation := Operation.t
 (** Create a journal from a block device. Descriptions of idempotent operations

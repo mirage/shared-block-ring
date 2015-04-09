@@ -24,6 +24,11 @@ module Lwt_result = struct
   let (>>=) m f = m >>= fun x -> f (get_ok x)
 end
 
+module Clock = struct
+  let time = Unix.gettimeofday
+  let sleep = Lwt_unix.sleep
+end
+
 let find_unused_file () =
   (* Find a filename which doesn't exist *)
   let rec does_not_exist i =
@@ -210,7 +215,7 @@ let test_journal () =
 
     let open Lwt_result in
     Block.connect name >>= fun device ->
-    let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Clock)(Op) in
     let perform xs =
       List.iter (fun x ->
         assert (x = "hello")
@@ -241,7 +246,7 @@ let test_journal_replay () =
 
     let open Lwt_result in
     Block.connect name >>= fun device ->
-    let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Clock)(Op) in
     let t, u = Lwt.task () in
     let perform = function
       | [] -> return (`Ok ())
@@ -277,7 +282,7 @@ let test_journal_order () =
 
     let open Lwt_result in
     Block.connect name >>= fun device ->
-    let module J = Shared_block.Journal.Make(Log)(Block)(Int) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Clock)(Int) in
 
     let counter = ref 0l in
     let last_flush = ref 0. in

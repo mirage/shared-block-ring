@@ -131,6 +131,13 @@ module type CONSUMER = sig
       [position] which can be used to consume all the items at once. *)
 end
 
+module type CLOCK = sig
+  val time: unit -> float
+  (** [time ()] returns the number of seconds since Jan 1 1970 *)
+
+  val sleep: float -> unit Lwt.t
+  (** [sleep secs] blocks for [secs] seconds *)
+end
 
 module type JOURNAL = sig
   type t
@@ -148,9 +155,12 @@ module type JOURNAL = sig
   val open_error : 'a result -> ('a, [> error]) Result.t
   val error_to_msg : 'a result -> ('a, Result.msg) Result.t
 
-  val start: disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
+  val start: ?flush_interval:float -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing
-      function which will be applied at-least-once to every item in the journal. *)
+      function which will be applied at-least-once to every item in the journal.
+      If a [flush_interval] is provided then every push will start a timer
+      and the items will not be processed until the timer expires (or the journal
+      becomes full) to encourage batching. *)
 
   val shutdown: t -> unit Lwt.t
   (** Shut down a journal replay thread *)
