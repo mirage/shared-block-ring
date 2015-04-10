@@ -24,6 +24,11 @@ module Lwt_result = struct
   let (>>=) m f = m >>= fun x -> f (get_ok x)
 end
 
+module Time = struct
+  type 'a io = 'a Lwt.t
+  let sleep = Lwt_unix.sleep
+end
+
 let find_unused_file () =
   (* Find a filename which doesn't exist *)
   let rec does_not_exist i =
@@ -44,11 +49,11 @@ let fill_with_message buffer message =
     Cstruct.set_char buffer i (message.[i mod (String.length message)])
   done
 
-let fresh_file nsectors =
+let fresh_file nbytes =
   let name = find_unused_file () in
   Lwt_unix.openfile name [ Lwt_unix.O_CREAT; Lwt_unix.O_WRONLY; Lwt_unix.O_TRUNC ] 0o0666 >>= fun fd ->
   (* Write the last sector to make sure the file has the intended size *)
-  Lwt_unix.LargeFile.lseek fd Int64.(sub nsectors 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
+  Lwt_unix.LargeFile.lseek fd Int64.(sub nbytes 512L) Lwt_unix.SEEK_CUR >>= fun _ ->
   let sector = alloc 512 in
   fill_with_message sector "\xde\xead\xbe\xef";
   Block.really_write fd sector >>= fun () ->
@@ -210,7 +215,7 @@ let test_journal () =
 
     let open Lwt_result in
     Block.connect name >>= fun device ->
-    let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
     let perform xs =
       List.iter (fun x ->
         assert (x = "hello")
@@ -241,7 +246,7 @@ let test_journal_replay () =
 
     let open Lwt_result in
     Block.connect name >>= fun device ->
-    let module J = Shared_block.Journal.Make(Log)(Block)(Op) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
     let t, u = Lwt.task () in
     let perform = function
       | [] -> return (`Ok ())
@@ -272,15 +277,15 @@ let test_journal_replay () =
    went in. *)
 let test_journal_order () =
   let t =
-    fresh_file size
+    (* Make it only big enough for a few items *)
+    fresh_file (Int64.of_int (512 + 512 + 512 + 512 + 8))
     >>= fun name ->
 
     let open Lwt_result in
     Block.connect name >>= fun device ->
-    let module J = Shared_block.Journal.Make(Log)(Block)(Int) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Int) in
 
     let counter = ref 0l in
-    let last_flush = ref 0. in
     let interval = 5. in
     let perform xs =
       let rec loop = function
@@ -289,26 +294,19 @@ let test_journal_order () =
         assert_equal ~printer:Int32.to_string !counter x;
         counter := Int32.succ !counter;
         loop xs in
-      let open Lwt in
-      Lwt_unix.sleep (max 0. (interval -. (Unix.gettimeofday () -. !last_flush)))
+      loop xs
       >>= fun () ->
-      last_flush := Unix.gettimeofday ();
-      loop xs in
-    J.start device perform
+      return (`Ok ()) in
+    J.start ~flush_interval:interval device perform
     >>= fun j ->
-    J.push j 0l
-    >>= fun _ ->
-    J.push j 1l
-    >>= fun _ ->
-    J.push j 2l
-    >>= fun _ ->
-    J.push j 3l
-    >>= fun _ ->
-    J.push j 4l
-    >>= fun _ ->
-    J.push j 5l
-    >>= fun _ ->
-    J.push j 6l
+    let rec loop = function
+      | 1000l ->
+        J.push j 1000l
+      | n ->
+        J.push j n
+        >>= fun _ ->
+        loop Int32.(succ n) in
+    loop 0l
     >>= fun w ->
     let open Lwt in
     w ()
@@ -331,4 +329,4 @@ let _ =
     "test journal replay" >:: test_journal_replay;
     "test journal order" >:: test_journal_order;
   ] @ test_push_pops in
-  run_test_tt suite
+  run_test_tt_main suite

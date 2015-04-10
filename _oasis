@@ -29,7 +29,7 @@ Executable test
   MainIs:             test.ml
   Custom:             true
   Install:            false
-  BuildDepends:       lwt, lwt.unix, mirage-block-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix, bisect
+  BuildDepends:       lwt, lwt.unix, mirage-block-unix, mirage-clock-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix, bisect
 
 Test test
   Command:            ./test.native
