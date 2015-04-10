@@ -7,6 +7,7 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     mutable thread: unit Lwt.t option;
     m: Lwt_mutex.t;
     c: unit Lwt_condition.t;
+    mutable wake_up: bool;
   }
 
   let create () =
@@ -14,15 +15,18 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     let thread = None in
     let m = Lwt_mutex.create () in
     let c = Lwt_condition.create () in
-    { wake_up_at; thread; m; c }
+    let wake_up = false in
+    { wake_up_at; thread; m; c; wake_up }
 
   let rec next t =
-    let now = Clock.time () in
-    if t.wake_up_at <= now then return ()
-    else
+    if t.wake_up then begin
+      t.wake_up <- false;
+      return ()
+    end else begin
       Lwt_condition.wait t.c
       >>= fun () ->
       next t
+    end
 
   let rec countdown t =
     let now = Clock.time () in
@@ -30,6 +34,8 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     >>= fun () ->
     let now = Clock.time () in
     if now >= t.wake_up_at then begin
+      t.thread <- None;
+      t.wake_up <- true;
       Lwt_condition.signal t.c ();
       return ()
     end else countdown t
@@ -222,15 +228,15 @@ module Make
     if t.please_shutdown
     then return (`Error (`Msg "journal shutdown in progress"))
     else begin
-      (* If the ring is becoming full, we want to flush.
-         Otherwise we reset the alarm timer. *)
-      Alarm.reset t.alarm t.flush_interval;
       Producer.push ~t:t.p ~item
       >>|= fun position ->
       Producer.advance ~t:t.p ~position
       >>|= fun () ->
       t.data_available <- true;
       Lwt_condition.broadcast t.cvar ();
+      (* If the ring is becoming full, we want to flush.
+         Otherwise we reset the alarm timer. *)
+      Alarm.reset t.alarm t.flush_interval;
       (* Some clients want to know when the item has been processed
          i.e. when the consumer is > position *)
       let has_consumed () = match t.consumed with
