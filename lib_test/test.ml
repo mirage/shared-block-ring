@@ -336,4 +336,4 @@ let _ =
     "test journal replay" >:: test_journal_replay;
     "test journal order" >:: test_journal_order;
   ] @ test_push_pops in
-  run_test_tt suite
+  run_test_tt_main suite
