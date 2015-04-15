@@ -21,6 +21,6 @@ depends: [
   "io-page"
   "io-page-unix"
   "cmdliner"
-  "bisect"
-  "oasis"
+  
+  
 ]

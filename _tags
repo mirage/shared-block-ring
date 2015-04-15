@@ -1,0 +1,82 @@
+# OASIS_START
+# DO NOT EDIT (digest: 389234ce77e64ffe6acf802a61387cb8)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
+# useless stuff for the build process
+true: annot, bin_annot
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
+# Library shared_block
+"lib/shared_block.cmxs": use_shared_block
+"lib/ring.cmx": for-pack(Shared_block)
+"lib/journal.cmx": for-pack(Shared_block)
+"lib/s.cmx": for-pack(Shared_block)
+"lib/monad.cmx": for-pack(Shared_block)
+"lib/result.cmx": for-pack(Shared_block)
+<lib/*.ml{,i,y}>: pkg_cstruct
+<lib/*.ml{,i,y}>: pkg_io-page
+<lib/*.ml{,i,y}>: pkg_lwt
+<lib/*.ml{,i,y}>: pkg_mirage-types
+<lib/*.ml{,i,y}>: pkg_sexplib
+<lib/*.ml{,i,y}>: pkg_sexplib.syntax
+# Executable shared-block-ring
+<example/main.{native,byte}>: pkg_cmdliner
+<example/main.{native,byte}>: pkg_cstruct
+<example/main.{native,byte}>: pkg_io-page
+<example/main.{native,byte}>: pkg_io-page.unix
+<example/main.{native,byte}>: pkg_lwt
+<example/main.{native,byte}>: pkg_lwt.unix
+<example/main.{native,byte}>: pkg_mirage-block-unix
+<example/main.{native,byte}>: pkg_mirage-types
+<example/main.{native,byte}>: pkg_oUnit
+<example/main.{native,byte}>: pkg_sexplib
+<example/main.{native,byte}>: pkg_sexplib.syntax
+<example/main.{native,byte}>: use_shared_block
+<example/*.ml{,i,y}>: pkg_cmdliner
+<example/*.ml{,i,y}>: pkg_cstruct
+<example/*.ml{,i,y}>: pkg_io-page
+<example/*.ml{,i,y}>: pkg_io-page.unix
+<example/*.ml{,i,y}>: pkg_lwt
+<example/*.ml{,i,y}>: pkg_lwt.unix
+<example/*.ml{,i,y}>: pkg_mirage-block-unix
+<example/*.ml{,i,y}>: pkg_mirage-types
+<example/*.ml{,i,y}>: pkg_oUnit
+<example/*.ml{,i,y}>: pkg_sexplib
+<example/*.ml{,i,y}>: pkg_sexplib.syntax
+<example/*.ml{,i,y}>: use_shared_block
+<example/main.{native,byte}>: custom
+# Executable test
+<lib_test/test.{native,byte}>: pkg_cstruct
+<lib_test/test.{native,byte}>: pkg_io-page
+<lib_test/test.{native,byte}>: pkg_io-page.unix
+<lib_test/test.{native,byte}>: pkg_lwt
+<lib_test/test.{native,byte}>: pkg_lwt.unix
+<lib_test/test.{native,byte}>: pkg_mirage-block-unix
+<lib_test/test.{native,byte}>: pkg_mirage-clock-unix
+<lib_test/test.{native,byte}>: pkg_mirage-types
+<lib_test/test.{native,byte}>: pkg_oUnit
+<lib_test/test.{native,byte}>: pkg_sexplib
+<lib_test/test.{native,byte}>: pkg_sexplib.syntax
+<lib_test/test.{native,byte}>: use_shared_block
+<lib_test/*.ml{,i,y}>: pkg_cstruct
+<lib_test/*.ml{,i,y}>: pkg_io-page
+<lib_test/*.ml{,i,y}>: pkg_io-page.unix
+<lib_test/*.ml{,i,y}>: pkg_lwt
+<lib_test/*.ml{,i,y}>: pkg_lwt.unix
+<lib_test/*.ml{,i,y}>: pkg_mirage-block-unix
+<lib_test/*.ml{,i,y}>: pkg_mirage-clock-unix
+<lib_test/*.ml{,i,y}>: pkg_mirage-types
+<lib_test/*.ml{,i,y}>: pkg_oUnit
+<lib_test/*.ml{,i,y}>: pkg_sexplib
+<lib_test/*.ml{,i,y}>: pkg_sexplib.syntax
+<lib_test/*.ml{,i,y}>: use_shared_block
+<lib_test/test.{native,byte}>: custom
+# OASIS_STOP
