@@ -37,6 +37,15 @@ let zero buf =
     Cstruct.set_uint8 buf i 0
   done
 
+let int_of_bool = function
+  | true -> 1
+  | false -> 2
+
+let bool_of_int = function
+  | 1 -> `Ok true
+  | 2 -> `Ok false
+  | x -> `Error (`Msg (Printf.sprintf "Failed to unmarshal a bool: %d" x))
+
 let alloc sector_size =
   let page = Io_page.(to_cstruct (get 1)) in
   let sector = Cstruct.sub page 0 sector_size in
@@ -90,6 +99,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     (* Initialise the producer and consumer before writing the magic
        in case we crash in the middle *)
     zero sector;
+    Cstruct.set_uint8 sector 8 (int_of_bool false);
     B.write device sector_producer [ sector ] >>*= fun () ->
     B.write device sector_consumer [ sector ] >>*= fun () ->
     Cstruct.blit_from_string magic 0 sector 0 (String.length magic);
@@ -132,26 +142,28 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
   let get_producer device sector =
     B.read device sector_producer [ sector ] >>*= fun () ->
     let producer = Cstruct.LE.get_uint64 sector 0 in
-    let suspend_ack = Cstruct.get_uint8 sector 8 = 1 in
+    return (bool_of_int (Cstruct.get_uint8 sector 8))
+    >>= fun suspend_ack ->
     return (`Ok { producer; suspend_ack })
 
   let set_producer device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v.producer;
-    Cstruct.set_uint8 sector 8 (if v.suspend_ack then 1 else 0);
+    Cstruct.set_uint8 sector 8 (int_of_bool v.suspend_ack);
     B.write device sector_producer [ sector ] >>*= fun () ->
     return (`Ok ())
 
   let get_consumer device sector =
     B.read device sector_consumer [ sector ] >>*= fun () ->
     let consumer = Cstruct.LE.get_uint64 sector 0 in
-    let suspend = Cstruct.get_uint8 sector 8 = 1 in
+    return (bool_of_int (Cstruct.get_uint8 sector 8))
+    >>= fun suspend ->
     return (`Ok { consumer; suspend })
 
   let set_consumer device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v.consumer;
-    Cstruct.set_uint8 sector 8 (if v.suspend then 1 else 0);
+    Cstruct.set_uint8 sector 8 (int_of_bool v.suspend);
     B.write device sector_consumer [ sector ] >>*= fun () ->
     return (`Ok ())
 
