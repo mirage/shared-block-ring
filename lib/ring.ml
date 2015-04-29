@@ -200,21 +200,6 @@ module Producer = struct
     create disk info sector >>= fun () ->
     return (`Ok ())
   
-  let attach ~disk:disk () =
-    B.get_info disk >>= fun info ->
-    let open C in
-    let sector = alloc info.B.sector_size in
-    is_initialised disk sector >>= function
-    | false -> return (`Error (`Msg "block ring has not been initialised"))
-    | true ->
-      get_producer disk sector >>= fun producer ->
-      return (`Ok {
-        disk;
-        info;
-        producer;
-        sector;
-        attached = true;
-        })
 
   let detach t =
     t.attached <- false;
@@ -245,6 +230,26 @@ module Producer = struct
       else if Int64.sub total used < needed_bytes
       then return (`Error `Retry)
       else return (`Ok ())
+
+  let attach ~disk:disk () =
+    B.get_info disk >>= fun info ->
+    let open C in
+    let sector = alloc info.B.sector_size in
+    is_initialised disk sector >>= function
+    | false -> return (`Error (`Msg "block ring has not been initialised"))
+    | true ->
+      get_producer disk sector >>= fun producer ->
+      let t = {
+        disk;
+        info;
+        producer;
+        sector;
+        attached = true;
+        } in
+      (* acknowledge any pending suspend/resume from the consumer *)
+      ok_to_write t 0L
+      >>= fun _ ->
+      return (`Ok t)
 
   let state t =
     let open Lwt in
