@@ -150,7 +150,7 @@ module type JOURNAL = sig
   val open_error : 'a result -> ('a, [> error]) Result.t
   val error_to_msg : 'a result -> ('a, Result.msg) Result.t
 
-  val start: ?flush_interval:float -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
+  val start: ?name:string -> ?client:string -> ?flush_interval:float -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing
       function which will be applied at-least-once to every item in the journal.
       If a [flush_interval] is provided then every push will start a timer
