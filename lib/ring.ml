@@ -37,6 +37,15 @@ let zero buf =
     Cstruct.set_uint8 buf i 0
   done
 
+let int_of_bool = function
+  | true -> 1
+  | false -> 2
+
+let bool_of_int = function
+  | 1 -> `Ok true
+  | 2 -> `Ok false
+  | x -> `Error (`Msg (Printf.sprintf "Failed to unmarshal a bool: %d" x))
+
 let alloc sector_size =
   let page = Io_page.(to_cstruct (get 1)) in
   let sector = Cstruct.sub page 0 sector_size in
@@ -90,6 +99,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     (* Initialise the producer and consumer before writing the magic
        in case we crash in the middle *)
     zero sector;
+    Cstruct.set_uint8 sector 8 (int_of_bool false);
     B.write device sector_producer [ sector ] >>*= fun () ->
     B.write device sector_consumer [ sector ] >>*= fun () ->
     Cstruct.blit_from_string magic 0 sector 0 (String.length magic);
@@ -120,38 +130,50 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     return (`Ok ())
 
   type producer = {
+    queue: string;
+    client: string;
     producer: int64;
     suspend_ack: bool;
   }
 
   type consumer = {
+    queue: string;
+    client: string;
     consumer: int64;
     suspend: bool;
   }
 
-  let get_producer device sector =
+  let get_producer ?(queue="") ?(client="") device sector =
     B.read device sector_producer [ sector ] >>*= fun () ->
     let producer = Cstruct.LE.get_uint64 sector 0 in
-    let suspend_ack = Cstruct.get_uint8 sector 8 = 1 in
-    return (`Ok { producer; suspend_ack })
+    return (bool_of_int (Cstruct.get_uint8 sector 8))
+    >>= fun suspend_ack ->
+    return (`Ok { queue; client; producer; suspend_ack })
 
   let set_producer device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v.producer;
-    Cstruct.set_uint8 sector 8 (if v.suspend_ack then 1 else 0);
+    Cstruct.set_uint8 sector 8 (int_of_bool v.suspend_ack);
+    (* Add human-readable debug into spare space in the sector *)
+    let msg = Printf.sprintf "%s used by %s; producer = %Ld; suspend_ack = %b" v.queue v.client v.producer v.suspend_ack in
+    Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
     B.write device sector_producer [ sector ] >>*= fun () ->
     return (`Ok ())
 
-  let get_consumer device sector =
+  let get_consumer ?(queue="") ?(client="") device sector =
     B.read device sector_consumer [ sector ] >>*= fun () ->
     let consumer = Cstruct.LE.get_uint64 sector 0 in
-    let suspend = Cstruct.get_uint8 sector 8 = 1 in
-    return (`Ok { consumer; suspend })
+    return (bool_of_int (Cstruct.get_uint8 sector 8))
+    >>= fun suspend ->
+    return (`Ok { queue; client; consumer; suspend })
 
   let set_consumer device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v.consumer;
-    Cstruct.set_uint8 sector 8 (if v.suspend then 1 else 0);
+    Cstruct.set_uint8 sector 8 (int_of_bool v.suspend);
+    (* Add human-readable debug into spare space in the sector *)
+    let msg = Printf.sprintf "%s used by %s; consumer = %Ld; suspend = %b" v.queue v.client v.consumer v.suspend in
+    Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
     B.write device sector_consumer [ sector ] >>*= fun () ->
     return (`Ok ())
 
@@ -231,14 +253,14 @@ module Producer = struct
       then return (`Error `Retry)
       else return (`Ok ())
 
-  let attach ~disk:disk () =
+  let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () =
     B.get_info disk >>= fun info ->
     let open C in
     let sector = alloc info.B.sector_size in
     is_initialised disk sector >>= function
     | false -> return (`Error (`Msg "block ring has not been initialised"))
     | true ->
-      get_producer disk sector >>= fun producer ->
+      get_producer ~queue ~client disk sector >>= fun producer ->
       let t = {
         disk;
         info;
@@ -357,7 +379,7 @@ module Consumer = struct
     then return (`Error (`Msg "Ring has been detached and cannot be used"))
     else f ()
 
-  let attach ~disk:disk () =
+  let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () =
     let open Lwt in
     B.get_info disk >>= fun info ->
     let open C in
@@ -365,7 +387,7 @@ module Consumer = struct
     is_initialised disk sector >>= function
     | false -> return (`Error (`Msg "block ring has not been initialised"))
     | true ->
-      get_consumer disk sector >>= fun consumer ->
+      get_consumer ~queue ~client disk sector >>= fun consumer ->
       return (`Ok {
         disk;
         info;
@@ -380,12 +402,13 @@ module Consumer = struct
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
     then return (`Error `Retry)
-    else
+    else begin
       let consumer = { t.consumer with C.suspend = true } in
       C.set_consumer t.disk t.sector consumer
       >>= fun () ->
       t.consumer <- consumer;
       return (`Ok ())
+    end
 
   let state t =
     let open C in

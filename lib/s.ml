@@ -56,8 +56,8 @@ module type RING = sig
   val open_error : 'a result -> ('a, [> error]) Result.t
   val error_to_msg : 'a result -> ('a, Result.msg) Result.t
 
-  val attach: disk:disk -> unit -> t result Lwt.t
-  (** [attach blockdevice] attaches to a previously-created shared ring on top
+  val attach: ?queue:string -> ?client:string -> disk:disk -> unit -> t result Lwt.t
+  (** [attach queue client blockdevice] attaches to a previously-created shared ring on top
       of [blockdevice]. *)
 
   val detach: t -> unit Lwt.t
