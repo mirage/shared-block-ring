@@ -134,16 +134,15 @@ module Make
     Lwt_condition.broadcast t.cvar ();
     return (`Ok ())
 
-  let start ?(flush_interval=0.) filename perform =
+  let start ?(name="unknown journal") ?(client="unknown") ?(flush_interval=0.) filename perform =
     let (>>|=) fn f = fn () >>= function
     | `Error `Retry -> return (`Error (`Msg "start: received `Retry"))
     | `Error `Suspended -> return (`Error (`Msg "start: received `Suspended"))
     | `Error (`Msg m) -> return (`Error (`Msg m))
     | `Error x -> return (`Error x)
     | `Ok x -> f x in
-
     (* If the ring doesn't exist, create it *)
-    ( fun () -> Consumer.attach ~disk:filename ()
+    ( fun () -> Consumer.attach ~queue:name ~client ~disk:filename ()
       >>= function
       | `Error (`Msg _) ->
         Producer.create ~disk:filename
@@ -151,10 +150,9 @@ module Make
         return (`Ok ())
       | _ ->
         return (`Ok ()) ) >>|= fun () ->
-
-    Consumer.attach ~disk:filename
+    Consumer.attach ~queue:name ~client ~disk:filename
     >>|= fun c ->
-    Producer.attach ~disk:filename 
+    Producer.attach ~queue:name ~client ~disk:filename 
     >>|= fun p ->
     let please_shutdown = false in
     let shutdown_complete = false in
@@ -204,8 +202,8 @@ module Make
         end in
       forever () in
     return (`Ok t)
-  let start ?flush_interval filename perform =
-    start ?flush_interval filename perform
+  let start ?name ?client ?flush_interval filename perform =
+    start ?name ?client ?flush_interval filename perform
     >>= fun x ->
     return (R.Consumer.error_to_msg x)
 
