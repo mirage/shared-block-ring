@@ -17,6 +17,11 @@ First create a "block device"-- any file will do:
 dd if=/dev/zero of=test.raw bs=10240 count=1
 ```
 
+Then initialise the ring in the file:
+```
+./main.native create
+```
+
 Then start two shells, in one run:
 ```
 ./main.native produce
@@ -26,3 +31,4 @@ and in the other
 ./main.native consume
 ```
 
+The producer takes input from stdin and puts it onto the ring, and the consumer takes entries from the ring and prints them to stdout.
