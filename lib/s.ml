@@ -13,6 +13,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
+open Sexplib.Std
 
 module type BLOCK = V1.BLOCK
   with type 'a io = 'a Lwt.t
@@ -34,10 +35,17 @@ module type CSTRUCTABLE = sig
   val of_cstruct: Cstruct.t -> t option
 end
 
+type traced_operation = [
+  | `Set of [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
+] with sexp
+type traced_operation_list = traced_operation list with sexp
+
 module type LOG = sig
   val debug : ('a, unit, string, unit) format4 -> 'a
   val info  : ('a, unit, string, unit) format4 -> 'a
   val error : ('a, unit, string, unit) format4 -> 'a
+
+  val trace: traced_operation list -> unit
 end
 
 module type RING = sig

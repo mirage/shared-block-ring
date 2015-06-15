@@ -171,6 +171,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     (* Add human-readable debug into spare space in the sector *)
     let msg = Printf.sprintf "%s used by %s; producer = %Ld; suspend_ack = %b" v.queue v.client v.producer v.suspend_ack in
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
+    Log.trace [ `Set(`Producer, `Int64 v.producer); `Set(`Suspend_ack, `Bool v.suspend_ack) ];
     B.write device sector_producer [ sector ] >>*= fun () ->
     return (`Ok ())
 
@@ -188,6 +189,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     (* Add human-readable debug into spare space in the sector *)
     let msg = Printf.sprintf "%s used by %s; consumer = %Ld; suspend = %b" v.queue v.client v.consumer v.suspend in
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
+    Log.trace [ `Set(`Consumer, `Int64 v.consumer); `Set(`Suspend, `Bool v.suspend) ];
     B.write device sector_consumer [ sector ] >>*= fun () ->
     return (`Ok ())
 
