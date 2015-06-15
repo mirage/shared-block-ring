@@ -162,6 +162,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let producer = Cstruct.LE.get_uint64 sector 0 in
     return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend_ack ->
+    Log.trace [ `Get(client, queue, `Producer, `Int64 producer); `Get(client, queue, `Suspend_ack, `Bool suspend_ack) ];
     return (`Ok { queue; client; producer; suspend_ack })
 
   let set_producer ?(queue="") ?(client="") device sector v =
@@ -180,6 +181,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let consumer = Cstruct.LE.get_uint64 sector 0 in
     return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend ->
+    Log.trace [ `Get(client, queue, `Consumer, `Int64 consumer); `Get(client, queue, `Suspend, `Bool suspend) ];
     return (`Ok { queue; client; consumer; suspend })
 
   let set_consumer ?(queue="") ?(client="") device sector v =
@@ -251,11 +253,12 @@ module Producer = struct
     else f ()
 
   let ok_to_write t needed_bytes =
+    let client, queue = t.client, t.queue in
     let open C in
-    get_consumer t.disk t.sector >>= fun c ->
+    get_consumer ~client ~queue t.disk t.sector >>= fun c ->
     ( if c.suspend <> t.producer.suspend_ack then begin
         let producer = { t.producer with suspend_ack = c.suspend } in
-        set_producer ~client:t.client ~queue:t.queue t.disk t.sector producer >>= fun () ->
+        set_producer ~client ~queue t.disk t.sector producer >>= fun () ->
         t.producer <- producer;
         return (`Ok ())
       end else return (`Ok ()) ) >>= fun () ->
@@ -423,28 +426,30 @@ module Consumer = struct
       })
 
   let suspend (t:t) =
+    let client, queue = t.client, t.queue in
     let open C in
-    C.get_producer t.disk t.sector
+    get_producer ~client:client ~queue:queue t.disk t.sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
     then return (`Error `Retry)
     else begin
       let consumer = { t.consumer with C.suspend = true } in
-      C.set_consumer ~queue:t.queue ~client:t.client t.disk t.sector consumer
+      C.set_consumer ~queue:queue ~client:client t.disk t.sector consumer
       >>= fun () ->
       t.consumer <- consumer;
       return (`Ok ())
     end
 
   let state t =
+    let client, queue = t.client, t.queue in
     let open C in
-    C.get_producer t.disk t.sector
+    C.get_producer ~client ~queue t.disk t.sector
     >>= fun p ->
     return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
 
   let resume (t: t) =
     let open C in
-    C.get_producer t.disk t.sector
+    C.get_producer ~client:t.client ~queue:t.queue t.disk t.sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
     then return (`Error `Retry)
@@ -458,7 +463,7 @@ module Consumer = struct
   let pop t =
     let open C in
     let total_sectors = get_data_sectors t.info in
-    get_producer t.disk t.sector >>= fun producer ->
+    get_producer ~client:t.client ~queue:t.queue t.disk t.sector >>= fun producer ->
     let available_bytes = Int64.sub producer.producer t.consumer.consumer in
     if available_bytes <= 0L
     then return (`Error `Retry)

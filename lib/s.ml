@@ -37,6 +37,7 @@ end
 
 type traced_operation = [
   | `Set of string * string * [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
+  | `Get of string * string * [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
 ] with sexp
 type traced_operation_list = traced_operation list with sexp
 
