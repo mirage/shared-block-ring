@@ -70,6 +70,11 @@ module type RING = sig
       items. Clients which support suspend/resume should arrange to call this
       function periodically. *)
 
+  val debug_info: t -> (string * string) list result Lwt.t
+  (** [debug_info t] returns a list of key=value pairs which may be useful
+      for debugging. Nothing should be assumed about the keys or the values;
+      they should only be printed or logged. *)
+
   type position with sexp_of
   (** The position within a stream *)
 

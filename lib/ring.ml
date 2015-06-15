@@ -143,6 +143,20 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     suspend: bool;
   }
 
+  let debug_info device sector =
+    B.read device sector_producer [ sector ] >>*= fun () ->
+    let producer = Cstruct.LE.get_uint64 sector 0 in
+    let suspend_ack = Cstruct.get_uint8 sector 8 in
+    B.read device sector_consumer [ sector ] >>*= fun () ->
+    let consumer = Cstruct.LE.get_uint64 sector 0 in
+    let suspend = Cstruct.get_uint8 sector 8 in
+    return (`Ok [
+      "producer/offset", Int64.to_string producer;
+      "producer/suspend_ack", string_of_int suspend_ack;
+      "consumer/offset", Int64.to_string consumer;
+      "consumer/suspend", string_of_int suspend
+    ])
+
   let get_producer ?(queue="") ?(client="") device sector =
     B.read device sector_producer [ sector ] >>*= fun () ->
     let producer = Cstruct.LE.get_uint64 sector 0 in
@@ -348,6 +362,8 @@ module Producer = struct
         >>= fun () ->
         unsafe_write t item
       )
+
+  let debug_info t = C.debug_info t.disk t.sector
 end
 
 module Consumer = struct
@@ -485,5 +501,7 @@ module Consumer = struct
         t.consumer <- consumer';
         return (`Ok ())
       )
+
+  let debug_info t = C.debug_info t.disk t.sector
 end
 end
