@@ -143,20 +143,36 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     suspend: bool;
   }
 
+  let debug_info device sector =
+    B.read device sector_producer [ sector ] >>*= fun () ->
+    let producer = Cstruct.LE.get_uint64 sector 0 in
+    let suspend_ack = Cstruct.get_uint8 sector 8 in
+    B.read device sector_consumer [ sector ] >>*= fun () ->
+    let consumer = Cstruct.LE.get_uint64 sector 0 in
+    let suspend = Cstruct.get_uint8 sector 8 in
+    return (`Ok [
+      "producer/offset", Int64.to_string producer;
+      "producer/suspend_ack", string_of_int suspend_ack;
+      "consumer/offset", Int64.to_string consumer;
+      "consumer/suspend", string_of_int suspend
+    ])
+
   let get_producer ?(queue="") ?(client="") device sector =
     B.read device sector_producer [ sector ] >>*= fun () ->
     let producer = Cstruct.LE.get_uint64 sector 0 in
     return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend_ack ->
+    Log.trace [ `Get(client, queue, `Producer, `Int64 producer); `Get(client, queue, `Suspend_ack, `Bool suspend_ack) ];
     return (`Ok { queue; client; producer; suspend_ack })
 
-  let set_producer device sector v =
+  let set_producer ?(queue="") ?(client="") device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v.producer;
     Cstruct.set_uint8 sector 8 (int_of_bool v.suspend_ack);
     (* Add human-readable debug into spare space in the sector *)
     let msg = Printf.sprintf "%s used by %s; producer = %Ld; suspend_ack = %b" v.queue v.client v.producer v.suspend_ack in
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
+    Log.trace [ `Set(client, queue, `Producer, `Int64 v.producer); `Set(client, queue, `Suspend_ack, `Bool v.suspend_ack) ];
     B.write device sector_producer [ sector ] >>*= fun () ->
     return (`Ok ())
 
@@ -165,15 +181,17 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let consumer = Cstruct.LE.get_uint64 sector 0 in
     return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend ->
+    Log.trace [ `Get(client, queue, `Consumer, `Int64 consumer); `Get(client, queue, `Suspend, `Bool suspend) ];
     return (`Ok { queue; client; consumer; suspend })
 
-  let set_consumer device sector v =
+  let set_consumer ?(queue="") ?(client="") device sector v =
     zero sector;
     Cstruct.LE.set_uint64 sector 0 v.consumer;
     Cstruct.set_uint8 sector 8 (int_of_bool v.suspend);
     (* Add human-readable debug into spare space in the sector *)
     let msg = Printf.sprintf "%s used by %s; consumer = %Ld; suspend = %b" v.queue v.client v.consumer v.suspend in
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
+    Log.trace [ `Set(client, queue, `Consumer, `Int64 v.consumer); `Set(client, queue, `Suspend, `Bool v.suspend) ];
     B.write device sector_consumer [ sector ] >>*= fun () ->
     return (`Ok ())
 
@@ -213,6 +231,8 @@ module Producer = struct
     mutable producer: C.producer; (* cache of the last value we wrote *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
     mutable attached: bool;
+    queue: string;
+    client: string;
   }
 
   let create ~disk:disk () =
@@ -233,11 +253,12 @@ module Producer = struct
     else f ()
 
   let ok_to_write t needed_bytes =
+    let client, queue = t.client, t.queue in
     let open C in
-    get_consumer t.disk t.sector >>= fun c ->
+    get_consumer ~client ~queue t.disk t.sector >>= fun c ->
     ( if c.suspend <> t.producer.suspend_ack then begin
         let producer = { t.producer with suspend_ack = c.suspend } in
-        set_producer t.disk t.sector producer >>= fun () ->
+        set_producer ~client ~queue t.disk t.sector producer >>= fun () ->
         t.producer <- producer;
         return (`Ok ())
       end else return (`Ok ()) ) >>= fun () ->
@@ -267,6 +288,8 @@ module Producer = struct
         producer;
         sector;
         attached = true;
+        queue;
+        client
         } in
       (* acknowledge any pending suspend/resume from the consumer *)
       ok_to_write t 0L
@@ -332,7 +355,7 @@ module Producer = struct
       (fun () ->
         let open C in
         let producer = { t.producer with producer = new_producer } in
-        set_producer t.disk t.sector producer >>= fun () ->
+        set_producer ~queue:t.queue ~client:t.client t.disk t.sector producer >>= fun () ->
         t.producer <- producer;
         return (`Ok ())
       )
@@ -348,6 +371,8 @@ module Producer = struct
         >>= fun () ->
         unsafe_write t item
       )
+
+  let debug_info t = C.debug_info t.disk t.sector
 end
 
 module Consumer = struct
@@ -368,6 +393,8 @@ module Consumer = struct
     mutable consumer: C.consumer; (* cache of the last value we wrote *)
     sector: Cstruct.t; (* a scratch buffer of size 1 sector *)
     mutable attached: bool;
+    queue: string;
+    client: string;
   }
 
   let detach t =
@@ -394,37 +421,41 @@ module Consumer = struct
         consumer;
         sector;
         attached = true;
+        queue;
+        client;
       })
 
   let suspend (t:t) =
+    let client, queue = t.client, t.queue in
     let open C in
-    C.get_producer t.disk t.sector
+    get_producer ~client:client ~queue:queue t.disk t.sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
     then return (`Error `Retry)
     else begin
       let consumer = { t.consumer with C.suspend = true } in
-      C.set_consumer t.disk t.sector consumer
+      C.set_consumer ~queue:queue ~client:client t.disk t.sector consumer
       >>= fun () ->
       t.consumer <- consumer;
       return (`Ok ())
     end
 
   let state t =
+    let client, queue = t.client, t.queue in
     let open C in
-    C.get_producer t.disk t.sector
+    C.get_producer ~client ~queue t.disk t.sector
     >>= fun p ->
     return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
 
   let resume (t: t) =
     let open C in
-    C.get_producer t.disk t.sector
+    C.get_producer ~client:t.client ~queue:t.queue t.disk t.sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
     then return (`Error `Retry)
     else
       let consumer = { t.consumer with C.suspend = false } in
-      C.set_consumer t.disk t.sector consumer
+      C.set_consumer ~queue:t.queue ~client:t.client t.disk t.sector consumer
       >>= fun () ->
       t.consumer <- consumer;
       return (`Ok ())
@@ -432,7 +463,7 @@ module Consumer = struct
   let pop t =
     let open C in
     let total_sectors = get_data_sectors t.info in
-    get_producer t.disk t.sector >>= fun producer ->
+    get_producer ~client:t.client ~queue:t.queue t.disk t.sector >>= fun producer ->
     let available_bytes = Int64.sub producer.producer t.consumer.consumer in
     if available_bytes <= 0L
     then return (`Error `Retry)
@@ -481,9 +512,11 @@ module Consumer = struct
       (fun () ->
         let open C in
         let consumer' = { t.consumer with consumer = consumer } in
-        set_consumer t.disk t.sector consumer' >>= fun () ->
+        set_consumer ~queue:t.queue ~client:t.client t.disk t.sector consumer' >>= fun () ->
         t.consumer <- consumer';
         return (`Ok ())
       )
+
+  let debug_info t = C.debug_info t.disk t.sector
 end
 end

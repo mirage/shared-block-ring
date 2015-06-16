@@ -110,8 +110,11 @@ let test_push_pop length batch () =
     Block.connect name
     >>= fun disk ->
     Producer.create ~disk () >>= fun () ->
-    Producer.attach ~disk () >>= fun producer ->
-    Consumer.attach ~disk () >>= fun consumer ->
+    Producer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun producer ->
+    Consumer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun consumer ->
+    (* check debug_info works *)
+    let _ = Producer.debug_info producer in
+    let _ = Consumer.debug_info consumer in
     let rec loop = function
       | 0 -> return ()
       | n ->
@@ -169,8 +172,8 @@ let test_suspend () =
     let open Lwt_result in
     Block.connect name >>= fun disk ->
     Producer.create ~disk () >>= fun () ->
-    Producer.attach ~disk () >>= fun producer ->
-    Consumer.attach ~disk () >>= fun consumer ->
+    Producer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun producer ->
+    Consumer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun consumer ->
     (* consumer thinks the queue is running *)
     let open Lwt in
     Consumer.state consumer >>= fun r ->
@@ -221,7 +224,7 @@ let test_journal () =
         assert (x = "hello")
       ) xs;
       return (`Ok ()) in
-    J.start device perform
+    J.start ~client:"test" ~name:"test_journal" device perform
     >>= fun j ->
     J.push j "hello"
     >>= fun w ->
@@ -253,7 +256,7 @@ let test_journal_replay () =
       | _ ->
         Lwt.wakeup_later u ();
         fail Not_found in
-    J.start device perform
+    J.start ~client:"test" ~name:"test_journal_replay" device perform
     >>= fun j ->
     J.push j "hello"
     >>= fun _ ->
@@ -266,7 +269,7 @@ let test_journal_replay () =
     (* Now pretend that we've just crashed and restarted *)
     let ok = ref false in
     let perform _ = ok := true; return (`Ok ()) in
-    J.start device perform
+    J.start ~client:"test" ~name:"test_journal_replay" device perform
     >>= fun j ->
     (* The operation should have been performed *)
     assert_equal ~printer:string_of_bool true !ok;
@@ -297,7 +300,7 @@ let test_journal_order () =
       loop xs
       >>= fun () ->
       return (`Ok ()) in
-    J.start ~flush_interval:interval device perform
+    J.start ~client:"test" ~name:"test_journal_order" ~flush_interval:interval device perform
     >>= fun j ->
     let rec loop = function
       | 1000l ->
