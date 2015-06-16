@@ -112,6 +112,9 @@ let test_push_pop length batch () =
     Producer.create ~disk () >>= fun () ->
     Producer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun producer ->
     Consumer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun consumer ->
+    (* check debug_info works *)
+    let _ = Producer.debug_info producer in
+    let _ = Consumer.debug_info consumer in
     let rec loop = function
       | 0 -> return ()
       | n ->
