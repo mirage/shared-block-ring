@@ -204,6 +204,9 @@ let test_suspend () =
     (* The producer notices it immediately too *)
     Producer.state producer >>= fun r ->
     assert_equal `Running (get_ok r);
+    (* The state of the consumer will now be running *)
+    Consumer.state consumer >>= fun r ->
+    assert_equal `Running (get_ok r);
     
     return () in
   Lwt_main.run t
