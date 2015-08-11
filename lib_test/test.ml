@@ -115,6 +115,15 @@ let test_push_pop length batch () =
     (* check debug_info works *)
     let _ = Producer.debug_info producer in
     let _ = Consumer.debug_info consumer in
+
+    let finished = ref false in
+    let rec spin () =
+      if !finished then return () else begin
+        Producer.state producer >>= fun _ ->
+        spin ()
+      end in
+    let spinner = spin () in
+
     let rec loop = function
       | 0 -> return ()
       | n ->
@@ -146,6 +155,8 @@ let test_push_pop length batch () =
     (* push/pop 2 * the number of sectors to guarantee we experience some wraparound *)
     let open Lwt in
     loop Int64.(to_int (mul 2L (div size 512L))) >>= fun () ->
+    finished := true;
+
     (* count how many items we can push in total *)
     let rec loop acc =
       let open Lwt in
@@ -221,7 +232,8 @@ let test_journal () =
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
     let perform xs =
       List.iter (fun x ->
-        assert (x = "hello")
+        if x <> "hello"
+        then failwith (Printf.sprintf "[%s]<>\"hello\"" (String.escaped x))
       ) xs;
       return (`Ok ()) in
     J.start ~client:"test" ~name:"test_journal" device perform

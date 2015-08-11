@@ -96,6 +96,11 @@ let create filename =
     >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
     | `Ok disk ->
+    let module Eraser = Shared_block.EraseBlock.Make(Block) in
+    Eraser.erase ~pattern:(Printf.sprintf "shared-block-ring/example/main.ml erased the %s volume; " filename) disk
+    >>= function
+    | `Error _ -> fail (Failure (Printf.sprintf "Failed to erase %s" filename))
+    | `Ok () ->
     Producer.create ~disk >>|= fun _ -> return () in
   try
     `Ok (Lwt_main.run t)
@@ -121,6 +126,38 @@ let diagnostics filename =
         >>= fun () ->
         loop ~from () in
     loop () in
+  try
+    `Ok (Lwt_main.run t)
+  with e ->
+    `Error(false, Printexc.to_string e)
+
+let suspend filename =
+  let t =
+    Block.connect filename
+    >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
+    | `Ok disk ->
+    Consumer.attach ~disk
+    >>|= fun c ->
+    (fun () -> Consumer.suspend c)
+    >>|= fun () ->
+    return () in
+  try
+    `Ok (Lwt_main.run t)
+  with e ->
+    `Error(false, Printexc.to_string e)
+
+let resume filename =
+  let t =
+    Block.connect filename
+    >>= function
+    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
+    | `Ok disk ->
+    Consumer.attach ~disk
+    >>|= fun c ->
+    (fun () -> Consumer.resume c)
+    >>|= fun () ->
+    return () in
   try
     `Ok (Lwt_main.run t)
   with e ->
@@ -181,13 +218,31 @@ let diagnostics_cmd =
   Term.(ret(pure diagnostics $ filename)),
   Term.info "diagnostics" ~doc ~man
 
+let suspend_cmd =
+  let doc = "Suspend the ring." in
+  let man = [
+    `S "DESCRIPTION";
+    `P "Perform a co-operative suspend of the ring. Once finished, the producer will have acknowledged and promise not to send any more data.";
+  ] @ help in
+  Term.(ret(pure suspend $ filename)),
+  Term.info "suspend" ~doc ~man
+
+let resume_cmd =
+  let doc = "Resume the ring." in
+  let man = [
+    `S "DESCRIPTION";
+    `P "Perform a co-operative resume of the ring. Once finished, the producer will have acknowledged and will be able to produce data.";
+  ] @ help in
+  Term.(ret(pure resume $ filename)),
+  Term.info "resume" ~doc ~man
+
 let default_cmd =
   let doc = "manipulate shared rings on block devices" in
   let man = help in
   Term.(ret (pure (`Help (`Pager, None)))),
   Term.info (Sys.argv.(0)) ~version:"1.0.0" ~doc ~man
 
-let cmds = [create_cmd; produce_cmd; consume_cmd; diagnostics_cmd]
+let cmds = [create_cmd; produce_cmd; consume_cmd; suspend_cmd; resume_cmd; diagnostics_cmd]
 
 let _ =
   match Term.eval_choice default_cmd cmds with
