@@ -96,6 +96,11 @@ let create filename =
     >>= function
     | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
     | `Ok disk ->
+    let module Eraser = Shared_block.EraseBlock.Make(Block) in
+    Eraser.erase ~pattern:(Printf.sprintf "shared-block-ring/example/main.ml erased the %s volume; " filename) disk
+    >>= function
+    | `Error _ -> fail (Failure (Printf.sprintf "Failed to erase %s" filename))
+    | `Ok () ->
     Producer.create ~disk >>|= fun _ -> return () in
   try
     `Ok (Lwt_main.run t)
