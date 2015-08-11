@@ -232,7 +232,8 @@ let test_journal () =
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
     let perform xs =
       List.iter (fun x ->
-        assert (x = "hello")
+        if x <> "hello"
+        then failwith (Printf.sprintf "[%s]<>\"hello\"" (String.escaped x))
       ) xs;
       return (`Ok ()) in
     J.start ~client:"test" ~name:"test_journal" device perform
