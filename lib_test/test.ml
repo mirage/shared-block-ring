@@ -241,7 +241,7 @@ let test_journal () =
     J.push j "hello"
     >>= fun w ->
     let open Lwt in
-    w ()
+    w.J.sync ()
     >>= fun () ->
     J.push j (String.create (Int64.to_int size))
     >>= fun t ->
@@ -324,7 +324,7 @@ let test_journal_order () =
     loop 0l
     >>= fun w ->
     let open Lwt in
-    w ()
+    w.J.sync ()
     >>= fun () ->
     J.shutdown j in
   Lwt_main.run t

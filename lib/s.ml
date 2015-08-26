@@ -174,7 +174,10 @@ module type JOURNAL = sig
   val shutdown: t -> unit Lwt.t
   (** Shut down a journal replay thread *)
 
-  type waiter = unit -> unit Lwt.t
+  type waiter = {
+    flush: unit -> unit;
+    sync: unit -> unit Lwt.t
+  }
 
   val push: t -> operation -> waiter result Lwt.t
   (** Append an operation to the journal. When this returns, the operation will

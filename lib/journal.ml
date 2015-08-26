@@ -82,7 +82,10 @@ module Make
   type 'a result = ('a, error) Result.t
   (*BISECT-IGNORE-END*)
 
-  type waiter = unit -> unit Lwt.t
+  type waiter = {
+    flush: unit -> unit;
+    sync: unit -> unit Lwt.t
+  }
 
   type t = {
     p: Producer.t;
@@ -244,14 +247,16 @@ module Make
           | `GreaterThan | `Equal -> true
           | `LessThan -> false
           end in
-        let rec wait () =
+        let rec sync () =
           if has_consumed ()
           then return ()
           else
             Lwt_condition.wait t.cvar
             >>= fun () ->
-            wait () in
-        return (`Ok wait)
+            sync () in
+        let flush () = Alarm.reset t.alarm 0. in
+        let waiter = { sync; flush } in
+        return (`Ok waiter)
     end
   let push t op =
     Lwt_mutex.with_lock t.m (fun () ->
