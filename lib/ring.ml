@@ -234,15 +234,17 @@ module Producer = struct
     client: string;
   }
 
-  let create ~disk:disk () =
+  let producer_m = Lwt_mutex.create ()
+  let with_lock (f: unit -> 'a) = Lwt_mutex.with_lock producer_m f
+
+  let create ~disk:disk () = with_lock @@ fun () ->
     B.get_info disk >>= fun info ->
     let open C in
     let sector = alloc info.B.sector_size in
     create disk info sector >>= fun () ->
     return (`Ok ())
-  
 
-  let detach t =
+  let detach t = with_lock @@ fun () ->
     t.attached <- false;
     return ()
 
@@ -274,7 +276,7 @@ module Producer = struct
       then return (`Error `Retry)
       else return (`Ok ())
 
-  let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () =
+  let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () = with_lock @@ fun () ->
     B.get_info disk >>= fun info ->
     let open C in
     let sector = alloc info.B.sector_size in
@@ -295,7 +297,7 @@ module Producer = struct
       >>= fun _ ->
       return (`Ok t)
 
-  let state t =
+  let state t = with_lock @@ fun () ->
     let open Lwt in
     ok_to_write t 0L
     >>= function
@@ -351,7 +353,7 @@ module Producer = struct
     let new_producer = Int64.add t.producer.producer needed_bytes in
     return (`Ok new_producer)
 
-  let advance ~t ~position:new_producer () =
+  let advance ~t ~position:new_producer () = with_lock (fun () ->
     must_be_attached t
       (fun () ->
         let open C in
@@ -361,8 +363,9 @@ module Producer = struct
         t.producer <- producer;
         return (`Ok ())
       )
+  )
 
-  let push ~t ~item () =
+  let push ~t ~item () = with_lock (fun () ->
     must_be_attached t
       (fun () ->
         let item = Item.to_cstruct item in
@@ -373,10 +376,13 @@ module Producer = struct
         >>= fun () ->
         unsafe_write t item
       )
+  )
 
-  let debug_info t =
+  let debug_info t = with_lock (fun () ->
     let sector = alloc t.info.B.sector_size in
     C.debug_info t.disk sector
+  )
+
 end
 
 module Consumer = struct
@@ -400,7 +406,10 @@ module Consumer = struct
     client: string;
   }
 
-  let detach t =
+  let consumer_m = Lwt_mutex.create ()
+  let with_lock (f: unit -> 'a) = Lwt_mutex.with_lock consumer_m f
+
+  let detach t = with_lock @@ fun () ->
     t.attached <- false;
     return ()
 
@@ -409,7 +418,7 @@ module Consumer = struct
     then return (`Error (`Msg "Ring has been detached and cannot be used"))
     else f ()
 
-  let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () =
+  let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () = with_lock @@ fun () ->
     let open Lwt in
     B.get_info disk >>= fun info ->
     let open C in
@@ -427,7 +436,7 @@ module Consumer = struct
         client;
       })
 
-  let suspend (t:t) =
+  let suspend (t:t) = with_lock @@ fun () ->
     let client, queue = t.client, t.queue in
     let open C in
     let sector = alloc t.info.B.sector_size in
@@ -443,7 +452,7 @@ module Consumer = struct
       return (`Ok ())
     end
 
-  let state t =
+  let state t = with_lock @@ fun () ->
     let client, queue = t.client, t.queue in
     let open C in
     let sector = alloc t.info.B.sector_size in
@@ -451,7 +460,7 @@ module Consumer = struct
     >>= fun p ->
     return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
 
-  let resume (t: t) =
+  let resume (t: t) = with_lock @@ fun () ->
     let open C in
     let sector = alloc t.info.B.sector_size in
     C.get_producer ~client:t.client ~queue:t.queue t.disk sector
@@ -465,7 +474,7 @@ module Consumer = struct
       t.consumer <- consumer;
       return (`Ok ())
 
-  let pop t =
+  let pop t = with_lock @@ fun () ->
     let open C in
     let sector = alloc t.info.B.sector_size in
     let total_sectors = get_data_sectors t.info in
@@ -513,7 +522,7 @@ module Consumer = struct
     | `Error x -> return (`Error x)
     | `Ok (from, x) -> fold ~f ~t ~from ~init:(f x acc) ()
 
-  let advance ~t ~position:consumer () =
+  let advance ~t ~position:consumer () = with_lock @@ fun () ->
     must_be_attached t
       (fun () ->
         let open C in
@@ -524,7 +533,7 @@ module Consumer = struct
         return (`Ok ())
       )
 
-  let debug_info t =
+  let debug_info t = with_lock @@ fun () ->
     let sector = alloc t.info.B.sector_size in
     C.debug_info t.disk sector
 end
