@@ -222,6 +222,49 @@ let test_suspend () =
     return () in
   Lwt_main.run t
 
+let test_suspend_advance_interleaved () =
+  let t =
+    fresh_file size
+    >>= fun name ->
+
+    let open Lwt_result in
+    Block.connect name >>= fun disk ->
+    Producer.create ~disk () >>= fun () ->
+    Producer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun producer ->
+    Consumer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun consumer ->
+
+    (* put some data in the queue and get it ready to be advanced *)
+    Producer.push ~t:producer ~item:"produce_consume_loop\n" () >>= fun position ->
+    Producer.advance ~t:producer ~position () >>= fun () ->
+    Consumer.pop ~t:consumer () >>= fun (position, _) ->
+
+    let consumer_advanced_t, consumer_advanced_u = Lwt.wait () in
+
+    let advance_consumer () =
+      Consumer.advance ~t:consumer ~position () >>= fun () ->
+      Lwt.wakeup_later consumer_advanced_u ();
+      return ()
+    in
+
+    let open Lwt in
+
+    (* advance the ring and wait for cache to be read *)
+    Lwt.async advance_consumer;
+    Lwt_unix.sleep 0.01 >>= fun () ->
+
+    (* consumer requests a suspend *)
+    Consumer.suspend consumer >>= fun r ->
+    get_ok r;
+
+    (* wait for advance to flush *)
+    consumer_advanced_t >>= fun () ->
+
+    Producer.state producer >>= fun r ->
+    assert_bool "Suspend bit not seen by Producer" ((get_ok r) = `Suspended);
+
+    return () in
+  Lwt_main.run t
+
 let test_journal () =
   let t =
     fresh_file size
@@ -340,6 +383,7 @@ let _ =
 
   let suite = "shared-block-ring" >::: [
     "test suspend" >:: test_suspend;
+    "test suspend and advance interleaved" >:: test_suspend_advance_interleaved;
     "test journal" >:: test_journal;
     "test journal replay" >:: test_journal_replay;
     "test journal order" >:: test_journal_order;
