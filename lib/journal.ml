@@ -117,7 +117,8 @@ module Make
       ) >>= function
     | `Ok x -> return (`Ok x)
     | `Error (`Msg x) ->
-      error "Failed to process journal item: %s" x;
+      error "Failed to process journal item: %s" x
+      >>= fun () ->
       return (`Error (`Msg x))
 
   let replay t () =
@@ -127,7 +128,8 @@ module Make
     >>|= fun (position, items) ->
     (* Note we want to apply the items in the original order *)
     let items = List.rev items in
-    info "There are %d items in the journal to replay" (List.length items);
+    info "There are %d items in the journal to replay" (List.length items)
+    >>= fun () ->
     perform t items
     >>|= fun () ->
     Consumer.advance ~t:t.c ~position

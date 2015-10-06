@@ -95,6 +95,9 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
        can be recovered and invite the upper layer to retry. *)
     | `Error (`Unknown x) -> return (`Error `Retry)
 
+  let trace list =
+    Lwt.bind (Log.trace list) (fun () -> Lwt.return (`Ok ()))
+
   let initialise device sector =
     (* Initialise the producer and consumer before writing the magic
        in case we crash in the middle *)
@@ -162,7 +165,8 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let producer = Cstruct.LE.get_uint64 sector 0 in
     return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend_ack ->
-    Log.trace [ `Get(client, queue, `Producer, `Int64 producer); `Get(client, queue, `Suspend_ack, `Bool suspend_ack) ];
+    trace [ `Get(client, queue, `Producer, `Int64 producer); `Get(client, queue, `Suspend_ack, `Bool suspend_ack) ]
+    >>= fun () ->
     return (`Ok { queue; client; producer; suspend_ack })
 
   let set_producer ?(queue="") ?(client="") device sector v =
@@ -172,7 +176,8 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     (* Add human-readable debug into spare space in the sector *)
     let msg = Printf.sprintf "%s used by %s; producer = %Ld; suspend_ack = %b" v.queue v.client v.producer v.suspend_ack in
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
-    Log.trace [ `Set(client, queue, `Producer, `Int64 v.producer); `Set(client, queue, `Suspend_ack, `Bool v.suspend_ack) ];
+    trace [ `Set(client, queue, `Producer, `Int64 v.producer); `Set(client, queue, `Suspend_ack, `Bool v.suspend_ack) ]
+    >>= fun () ->
     B.write device sector_producer [ sector ] >>*= fun () ->
     return (`Ok ())
 
@@ -181,7 +186,8 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let consumer = Cstruct.LE.get_uint64 sector 0 in
     return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend ->
-    Log.trace [ `Get(client, queue, `Consumer, `Int64 consumer); `Get(client, queue, `Suspend, `Bool suspend) ];
+    trace [ `Get(client, queue, `Consumer, `Int64 consumer); `Get(client, queue, `Suspend, `Bool suspend) ]
+    >>= fun () ->
     return (`Ok { queue; client; consumer; suspend })
 
   let set_consumer ?(queue="") ?(client="") device sector v =
@@ -191,7 +197,8 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     (* Add human-readable debug into spare space in the sector *)
     let msg = Printf.sprintf "%s used by %s; consumer = %Ld; suspend = %b" v.queue v.client v.consumer v.suspend in
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
-    Log.trace [ `Set(client, queue, `Consumer, `Int64 v.consumer); `Set(client, queue, `Suspend, `Bool v.suspend) ];
+    trace [ `Set(client, queue, `Consumer, `Int64 v.consumer); `Set(client, queue, `Suspend, `Bool v.suspend) ]
+    >>= fun () ->
     B.write device sector_consumer [ sector ] >>*= fun () ->
     return (`Ok ())
 
