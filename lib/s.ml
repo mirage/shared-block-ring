@@ -42,11 +42,11 @@ type traced_operation = [
 type traced_operation_list = traced_operation list with sexp
 
 module type LOG = sig
-  val debug : ('a, unit, string, unit) format4 -> 'a
-  val info  : ('a, unit, string, unit) format4 -> 'a
-  val error : ('a, unit, string, unit) format4 -> 'a
+  val debug : ('a, unit, string, unit Lwt.t) format4 -> 'a
+  val info : ('a, unit, string, unit Lwt.t) format4 -> 'a
+  val error : ('a, unit, string, unit Lwt.t) format4 -> 'a
 
-  val trace: traced_operation list -> unit
+  val trace: traced_operation list -> unit Lwt.t
 end
 
 module type RING = sig
