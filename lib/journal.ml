@@ -100,6 +100,7 @@ module Make
     alarm: Alarm.t;
     m: Lwt_mutex.t;
     flush_interval: float;
+    retry_interval: float;
     (* Internally handle `Error `Retry by sleeping on the cvar.
        All other errors are fatal. *)
     bind: 'a 'b 'c 'd. 
@@ -113,11 +114,14 @@ module Make
       (fun () -> t.perform items) 
       (fun e ->
          let msg = Printexc.to_string e in
+         t.data_available <- true;
+         Alarm.reset t.alarm t.retry_interval;
          return (`Error (`Msg msg))
       ) >>= function
     | `Ok x -> return (`Ok x)
     | `Error (`Msg x) ->
-      error "Failed to process journal item: %s" x;
+      error "Failed to process journal item: %s" x
+      >>= fun () ->
       return (`Error (`Msg x))
 
   let replay t () =
@@ -127,7 +131,8 @@ module Make
     >>|= fun (position, items) ->
     (* Note we want to apply the items in the original order *)
     let items = List.rev items in
-    info "There are %d items in the journal to replay" (List.length items);
+    info "There are %d items in the journal to replay" (List.length items)
+    >>= fun () ->
     perform t items
     >>|= fun () ->
     Consumer.advance ~t:t.c ~position
@@ -137,7 +142,7 @@ module Make
     Lwt_condition.broadcast t.cvar ();
     return (`Ok ())
 
-  let start ?(name="unknown journal") ?(client="unknown") ?(flush_interval=0.) filename perform =
+  let start ?(name="unknown journal") ?(client="unknown") ?(flush_interval=0.) ?(retry_interval=5.) filename perform =
     let (>>|=) fn f = fn () >>= function
     | `Error `Retry -> return (`Error (`Msg "start: received `Retry"))
     | `Error `Suspended -> return (`Error (`Msg "start: received `Suspended"))
@@ -177,14 +182,13 @@ module Make
       | `Ok x -> f x in
     let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
               consumed; perform; m; data_available; bind; alarm;
-              flush_interval } in
-    let (>>|=) = t.bind in
-    replay t
-    >>|= fun () ->
+              flush_interval; retry_interval } in
+    replay t ()
+    >>= fun _ ->
     (* Run a background thread processing items from the journal *)
     let (_: (unit, R.Consumer.error) Result.t Lwt.t) =
       let rec forever () =
-        ( if t.data_available
+        ( if t.data_available || t.please_shutdown
           then return ()
           else Lwt_condition.wait t.cvar )
         >>= fun () ->
@@ -205,8 +209,8 @@ module Make
         end in
       forever () in
     return (`Ok t)
-  let start ?name ?client ?flush_interval filename perform =
-    start ?name ?client ?flush_interval filename perform
+  let start ?name ?client ?flush_interval ?retry_interval filename perform =
+    start ?name ?client ?flush_interval ?retry_interval filename perform
     >>= fun x ->
     return (R.Consumer.error_to_msg x)
 

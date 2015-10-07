@@ -122,7 +122,7 @@ let test_push_pop length batch () =
         Producer.state producer >>= fun _ ->
         spin ()
       end in
-    let spinner = spin () in
+    let _ = spin () in
 
     let rec loop = function
       | 0 -> return ()
@@ -305,19 +305,30 @@ let test_journal_replay () =
     let open Lwt_result in
     Block.connect name >>= fun device ->
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
-    let t, u = Lwt.task () in
+    let attempts = Hashtbl.create 2 in
     let perform = function
       | [] -> return (`Ok ())
-      | _ ->
-        Lwt.wakeup_later u ();
+      | x::xs ->
+        let init = try Hashtbl.find attempts x with _ -> 0 in
+        Hashtbl.replace attempts x (init+1);
         fail Not_found in
-    J.start ~client:"test" ~name:"test_journal_replay" device perform
+    J.start ~client:"test" ~name:"test_journal_replay" ~retry_interval:0.1 device perform
     >>= fun j ->
+    let open Lwt in
     J.push j "hello"
     >>= fun _ ->
-    (* The operation is not performed *)
+    J.push j "hello2"
+    >>= fun _ ->
+    Lwt_unix.sleep 1.0 >>= fun () ->
+    let hello_tries = try Hashtbl.find attempts "hello" with _ -> 0 in
+    let hello2_tries = try Hashtbl.find attempts "hello2" with _ -> 0 in
+
+    let hello_tries_ok = hello_tries > 1 in
+    let hello2_tries_ok = hello2_tries = 0 in
+    Printf.fprintf stderr "hello_tries = %d hello2_tries = %d\n%!" hello_tries hello2_tries;
+    assert_equal ~printer:string_of_bool hello_tries_ok true;
+    assert_equal ~printer:string_of_bool hello2_tries_ok true;
     let open Lwt in
-    t >>= fun () ->
     J.shutdown j
     >>= fun () ->
     let open Lwt_result in
