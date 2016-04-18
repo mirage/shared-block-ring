@@ -6,7 +6,7 @@
 
 OASISFormat: 0.3
 Name:        shared-block-ring
-Version:     2.1.0
+Version:     2.2.0
 Synopsis:    Simple persistent queue over a block device
 Authors:     David Scott
 License:     ISC
