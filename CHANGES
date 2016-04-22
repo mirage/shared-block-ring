@@ -1,3 +1,7 @@
+2.2.0 (18-4-2016)
+- Bug fixes (including API changes) for concurrency issues
+- Switch to Lwt log
+
 2.0.0 (30-4-2015)
 - Ring is now functorised over a LOGging module
 - Switch to a Rresult-like error type
