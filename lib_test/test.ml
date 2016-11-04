@@ -14,11 +14,13 @@
  * PERFORMANCE OF THIS SOFTWARE.
  *)
 
+open Result
 open Lwt
 open OUnit
 
 (* Let's try to adopt the conventions of Rresult.R *)
-let get_ok, get_error = Shared_block.Result.(get_ok, get_error)
+let get_ok = function | Ok x -> x | Error y -> raise (Invalid_argument "get_ok encountered an Error")
+let get_error = function | Error x -> x | Ok _ -> raise (Invalid_argument "get_error encountered an OK")
 
 module Lwt_result = struct
   let (>>=) m f = m >>= fun x -> f (get_ok x)
@@ -106,9 +108,10 @@ let test_push_pop length batch () =
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
     let toobig = String.create Int64.(to_int size) in
-    let open Lwt_result in
     Block.connect name
-    >>= fun disk ->
+    >>= fun disk' ->
+    let disk = match disk' with `Ok disk -> disk | `Error y -> failwith "Got an error when expecting an OK" in
+    let open Lwt_result in
     Producer.create ~disk () >>= fun () ->
     Producer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun producer ->
     Consumer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun consumer ->
@@ -161,9 +164,9 @@ let test_push_pop length batch () =
     let rec loop acc =
       let open Lwt in
       Producer.push ~t:producer ~item:payload () >>= function
-      | `Error `Retry -> return acc
-      | `Error _ -> failwith "counting the number of pushes"
-      | `Ok position ->
+      | Error `Retry -> return acc
+      | Error _ -> failwith "counting the number of pushes"
+      | Ok position ->
         Producer.advance ~t:producer ~position () >>= fun unit ->
         get_ok unit;
         loop (acc + 1) in
@@ -180,8 +183,10 @@ let test_suspend () =
     fresh_file size
     >>= fun name ->
 
+    Block.connect name >>= fun disk' ->
+    let disk = match disk' with `Ok disk -> disk | `Error y -> failwith "Got an error when expecting an OK" in
     let open Lwt_result in
-    Block.connect name >>= fun disk ->
+
     Producer.create ~disk () >>= fun () ->
     Producer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun producer ->
     Consumer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun consumer ->
@@ -227,8 +232,10 @@ let test_suspend_advance_interleaved () =
     fresh_file size
     >>= fun name ->
 
+
+    Block.connect name >>= fun disk' ->
+    let disk = match disk' with `Ok disk -> disk | `Error y -> failwith "Got an error when expecting an OK" in
     let open Lwt_result in
-    Block.connect name >>= fun disk ->
     Producer.create ~disk () >>= fun () ->
     Producer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun producer ->
     Consumer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun consumer ->
@@ -270,15 +277,17 @@ let test_journal () =
     fresh_file size
     >>= fun name ->
 
-    let open Lwt_result in
-    Block.connect name >>= fun device ->
+
+    Block.connect name >>= fun device' ->
+    let device = match device' with `Ok x -> x | `Error y -> failwith "Expecting an OK, got an Error" in
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
+    let open Lwt_result in
     let perform xs =
       List.iter (fun x ->
         if x <> "hello"
         then failwith (Printf.sprintf "[%s]<>\"hello\"" (String.escaped x))
       ) xs;
-      return (`Ok ()) in
+      return (Ok ()) in
     J.start ~client:"test" ~name:"test_journal" device perform
     >>= fun j ->
     J.push j "hello"
@@ -302,12 +311,14 @@ let test_journal_replay () =
     fresh_file size
     >>= fun name ->
 
+
+    Block.connect name >>= fun device' ->
+    let device = match device' with `Ok x -> x | `Error y -> failwith "Expecting an OK, got an Error" in
     let open Lwt_result in
-    Block.connect name >>= fun device ->
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
     let attempts = Hashtbl.create 2 in
     let perform = function
-      | [] -> return (`Ok ())
+      | [] -> return (Ok ())
       | x::xs ->
         let init = try Hashtbl.find attempts x with _ -> 0 in
         Hashtbl.replace attempts x (init+1);
@@ -334,7 +345,7 @@ let test_journal_replay () =
     let open Lwt_result in
     (* Now pretend that we've just crashed and restarted *)
     let ok = ref false in
-    let perform _ = ok := true; return (`Ok ()) in
+    let perform _ = ok := true; return (Ok ()) in
     J.start ~client:"test" ~name:"test_journal_replay" device perform
     >>= fun j ->
     (* The operation should have been performed *)
@@ -350,22 +361,25 @@ let test_journal_order () =
     fresh_file (Int64.of_int (512 + 512 + 512 + 512 + 8))
     >>= fun name ->
 
+    Block.connect name >>= fun device' ->
+
     let open Lwt_result in
-    Block.connect name >>= fun device ->
+
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Int) in
+    let device = match device' with `Ok x -> x | `Error y -> failwith "Expecting an OK, got an Error" in
 
     let counter = ref 0l in
     let interval = 5. in
     let perform xs =
       let rec loop = function
-      | [] -> return (`Ok ())
+      | [] -> return (Ok ())
       | x :: xs ->
         assert_equal ~printer:Int32.to_string !counter x;
         counter := Int32.succ !counter;
         loop xs in
       loop xs
       >>= fun () ->
-      return (`Ok ()) in
+      return (Ok ()) in
     J.start ~client:"test" ~name:"test_journal_order" ~flush_interval:interval device perform
     >>= fun j ->
     let rec loop = function

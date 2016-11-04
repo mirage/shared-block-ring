@@ -12,13 +12,14 @@
  * GNU Lesser General Public License for more details.
  *)
 
+open Result
 open Lwt
 
 let block_error = function
-  | `Unknown x -> `Error (`Msg x)
-  | `Unimplemented -> `Error (`Msg "unimplemented")
-  | `Is_read_only -> `Error (`Msg "device is read-only")
-  | `Disconnected -> `Error (`Msg "disconnected")
+  | `Unknown x -> Error (`Msg x)
+  | `Unimplemented -> Error (`Msg "unimplemented")
+  | `Is_read_only -> Error (`Msg "device is read-only")
+  | `Disconnected -> Error (`Msg "disconnected")
 
 module IO = struct
   let ( >>= ) m f = m >>= function
@@ -41,7 +42,7 @@ module Make(B: S.BLOCK) = struct
     let open IO in
     let rec loop n =
       if n = info.B.size_sectors
-      then return (`Ok ())
+      then return (Ok ())
       else
         let buffer_in_sectors = Cstruct.len buffer / info.B.sector_size in
         let needed = Int64.to_int (min (Int64.sub info.B.size_sectors n) (Int64.of_int buffer_in_sectors)) in

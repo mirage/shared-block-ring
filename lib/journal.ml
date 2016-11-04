@@ -1,3 +1,4 @@
+open Result
 open Lwt
 open Sexplib.Std
 
@@ -74,12 +75,12 @@ module Make
   let pp_error fmt = function
     | `Msg x -> Format.pp_print_string fmt x
   let error_to_msg = function
-    | `Ok x -> `Ok x
-    | `Error (`Msg x) -> `Error (`Msg x)
+    | Ok x -> Ok x
+    | Error (`Msg x) -> Error (`Msg x)
   let open_error = function
-    | `Ok x -> `Ok x
-    | `Error (`Msg x) -> `Error (`Msg x)
-  type 'a result = ('a, error) Result.t
+    | Ok x -> Ok x
+    | Error (`Msg x) -> Error (`Msg x)
+  type 'a result = ('a, error) Result.result
   (*BISECT-IGNORE-END*)
 
   type waiter = {
@@ -96,17 +97,17 @@ module Make
     mutable please_shutdown: bool;
     mutable shutdown_complete: bool;
     mutable consumed: Consumer.position option;
-    perform: Op.t list -> (unit, error) Result.t Lwt.t;
+    perform: Op.t list -> (unit, error) Result.result Lwt.t;
     alarm: Alarm.t;
     m: Lwt_mutex.t;
     flush_interval: float;
     retry_interval: float;
-    (* Internally handle `Error `Retry by sleeping on the cvar.
+    (* Internally handle Error `Retry by sleeping on the cvar.
        All other errors are fatal. *)
     bind: 'a 'b 'c 'd. 
-      (unit -> (('a, [< R.Consumer.error] as 'd) Result.t Lwt.t))
-      -> ('a -> ('b, [> R.Consumer.error] as 'c) Result.t Lwt.t)
-      -> ('b, [> R.Consumer.error] as 'c) Result.t Lwt.t
+      (unit -> (('a, [< R.Consumer.error] as 'd) Result.result Lwt.t))
+      -> ('a -> ('b, [> R.Consumer.error] as 'c) Result.result Lwt.t)
+      -> ('b, [> R.Consumer.error] as 'c) Result.result Lwt.t
   }
 
   let perform t items () =
@@ -116,13 +117,13 @@ module Make
          let msg = Printexc.to_string e in
          t.data_available <- true;
          Alarm.reset t.alarm t.retry_interval;
-         return (`Error (`Msg msg))
+         return (Error (`Msg msg))
       ) >>= function
-    | `Ok x -> return (`Ok x)
-    | `Error (`Msg x) ->
+    | Ok x -> return (Ok x)
+    | Error (`Msg x) ->
       error "Failed to process journal item: %s" x
       >>= fun () ->
-      return (`Error (`Msg x))
+      return (Error (`Msg x))
 
   let replay t () =
     let (>>|=) = t.bind in
@@ -140,24 +141,24 @@ module Make
     t.consumed <- Some position;
     (* wake up anyone stuck in a `Retry loop *)
     Lwt_condition.broadcast t.cvar ();
-    return (`Ok ())
+    return (Ok ())
 
   let start ?(name="unknown journal") ?(client="unknown") ?(flush_interval=0.) ?(retry_interval=5.) filename perform =
     let (>>|=) fn f = fn () >>= function
-    | `Error `Retry -> return (`Error (`Msg "start: received `Retry"))
-    | `Error `Suspended -> return (`Error (`Msg "start: received `Suspended"))
-    | `Error (`Msg m) -> return (`Error (`Msg m))
-    | `Error x -> return (`Error x)
-    | `Ok x -> f x in
+    | Error `Retry -> return (Error (`Msg "start: received `Retry"))
+    | Error `Suspended -> return (Error (`Msg "start: received `Suspended"))
+    | Error (`Msg m) -> return (Error (`Msg m))
+    | Error x -> return (Error x)
+    | Ok x -> f x in
     (* If the ring doesn't exist, create it *)
     ( fun () -> Consumer.attach ~queue:name ~client ~disk:filename ()
       >>= function
-      | `Error (`Msg _) ->
+      | Error (`Msg _) ->
         Producer.create ~disk:filename
         >>|= fun () ->
-        return (`Ok ())
+        return (Ok ())
       | _ ->
-        return (`Ok ()) ) >>|= fun () ->
+        return (Ok ()) ) >>|= fun () ->
     Consumer.attach ~queue:name ~client ~disk:filename
     >>|= fun c ->
     Producer.attach ~queue:name ~client ~disk:filename 
@@ -170,23 +171,23 @@ module Make
     let data_available = true in
     let alarm = Alarm.create () in
     let rec bind fn f = fn () >>= function
-      | `Error `Suspended -> return (`Error (`Msg "Ring is suspended"))
-      | `Error (`Msg x) -> return (`Error (`Msg x))
-      | `Error `Retry ->
+      | Error `Suspended -> return (Error (`Msg "Ring is suspended"))
+      | Error (`Msg x) -> return (Error (`Msg x))
+      | Error `Retry ->
         (* If we're out of space then allow the journal to replay
            immediately. *)
         Alarm.reset alarm 0.;
         Lwt_condition.wait cvar
         >>= fun () ->
         bind fn f
-      | `Ok x -> f x in
+      | Ok x -> f x in
     let t = { p; c; filename; please_shutdown; shutdown_complete; cvar;
               consumed; perform; m; data_available; bind; alarm;
               flush_interval; retry_interval } in
     replay t ()
     >>= fun _ ->
     (* Run a background thread processing items from the journal *)
-    let (_: (unit, R.Consumer.error) Result.t Lwt.t) =
+    let (_: (unit, R.Consumer.error) Result.result Lwt.t) =
       let rec forever () =
         ( if t.data_available || t.please_shutdown
           then return ()
@@ -195,7 +196,7 @@ module Make
         if t.please_shutdown then begin
           t.shutdown_complete <- true;
           Lwt_condition.broadcast t.cvar ();
-          return (`Ok ())
+          return (Ok ())
         end else begin
           (* This allows us to wait for batching *)
           Alarm.next alarm
@@ -208,7 +209,7 @@ module Make
           forever ()
         end in
       forever () in
-    return (`Ok t)
+    return (Ok t)
   let start ?name ?client ?flush_interval ?retry_interval filename perform =
     start ?name ?client ?flush_interval ?retry_interval filename perform
     >>= fun x ->
@@ -231,7 +232,7 @@ module Make
   let rec push t item =
     let (>>|=) = t.bind in
     if t.please_shutdown
-    then return (`Error (`Msg "journal shutdown in progress"))
+    then return (Error (`Msg "journal shutdown in progress"))
     else begin
       Producer.push ~t:t.p ~item
       >>|= fun position ->
@@ -260,7 +261,7 @@ module Make
             sync () in
         let flush () = Alarm.reset t.alarm 0. in
         let waiter = { sync; flush } in
-        return (`Ok waiter)
+        return (Ok waiter)
     end
   let push t op =
     Lwt_mutex.with_lock t.m (fun () ->
