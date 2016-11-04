@@ -11,6 +11,7 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Lesser General Public License for more details.
  *)
+open Result
 open Lwt
 
 let project_url = "http://github.com/djs55/shared-block-ring"
@@ -34,13 +35,13 @@ end)
 open R
 
 let rec bind fn f = fn () >>= function
-  | `Error `Suspended -> fail (Failure "Ring is suspended")
-  | `Error (`Msg x) -> fail (Failure x)
-  | `Error `Retry ->
+  | Error `Suspended -> fail (Failure "Ring is suspended")
+  | Error (`Msg x) -> fail (Failure x)
+  | Error `Retry ->
     Lwt_unix.sleep 5.
     >>= fun () ->
     bind fn f
-  | `Ok x -> f x
+  | Ok x -> f x
 let (>>|=) = bind
 
 let produce filename interval =
@@ -100,8 +101,8 @@ let create filename =
     let module Eraser = Shared_block.EraseBlock.Make(Block) in
     Eraser.erase ~pattern:(Printf.sprintf "shared-block-ring/example/main.ml erased the %s volume; " filename) disk
     >>= function
-    | `Error _ -> fail (Failure (Printf.sprintf "Failed to erase %s" filename))
-    | `Ok () ->
+    | Error _ -> fail (Failure (Printf.sprintf "Failed to erase %s" filename))
+    | Ok () ->
     Producer.create ~disk >>|= fun _ -> return () in
   try
     `Ok (Lwt_main.run t)
@@ -119,7 +120,7 @@ let diagnostics filename =
     let rec loop ?from () =
       Consumer.pop ~t:c ?from ()
       >>= function
-      | `Error `Retry ->
+      | Error `Retry ->
         Lwt_io.write_line Lwt_io.stdout "-- there are no more items"
       | x ->
         (fun () -> return x) >>|= fun (from, buf) ->

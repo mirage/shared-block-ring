@@ -29,4 +29,5 @@ depends: [
   "cmdliner"
   "bisect"
   "oasis"
+  "result"
 ]

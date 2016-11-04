@@ -15,6 +15,8 @@
  *)
 open Sexplib.Std
 
+type msg = [ `Msg of string ]
+
 module type BLOCK = V1.BLOCK
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
@@ -60,10 +62,11 @@ module type RING = sig
   (* A message on the ring *)
 
   type error = [ `Retry | `Suspended | `Msg of string ]
-  type 'a result = ('a, error) Result.t
+
+  type 'a result = ('a, error) Result.result
   val pp_error : Format.formatter -> error -> unit
-  val open_error : 'a result -> ('a, [> error]) Result.t
-  val error_to_msg : 'a result -> ('a, Result.msg) Result.t
+  val open_error : 'a result -> ('a, [> error]) Result.result
+  val error_to_msg : 'a result -> ('a, msg) Result.result
 
   val attach: ?queue:string -> ?client:string -> disk:disk -> unit -> t result Lwt.t
   (** [attach queue client blockdevice] attaches to a previously-created shared ring on top
@@ -159,10 +162,10 @@ module type JOURNAL = sig
   (** An idempotent operation which we will perform at-least-once *)
 
   type error = [ `Msg of string ]
-  type 'a result = ('a, error) Result.t
+  type 'a result = ('a, error) Result.result
   val pp_error : Format.formatter -> error -> unit
-  val open_error : 'a result -> ('a, [> error]) Result.t
-  val error_to_msg : 'a result -> ('a, Result.msg) Result.t
+  val open_error : 'a result -> ('a, [> error]) Result.result
+  val error_to_msg : 'a result -> ('a, msg) Result.result
 
   val start: ?name:string -> ?client:string -> ?flush_interval:float -> ?retry_interval:float -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing
