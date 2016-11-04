@@ -15,6 +15,8 @@
  *)
 open Sexplib.Std
 
+type msg = [ `Msg of string ]
+
 module type BLOCK = V1.BLOCK
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
@@ -38,8 +40,8 @@ end
 type traced_operation = [
   | `Set of string * string * [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
   | `Get of string * string * [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
-] with sexp
-type traced_operation_list = traced_operation list with sexp
+] [@@deriving sexp]
+type traced_operation_list = traced_operation list [@@deriving sexp]
 
 module type LOG = sig
   val debug : ('a, unit, string, unit Lwt.t) format4 -> 'a
@@ -60,10 +62,11 @@ module type RING = sig
   (* A message on the ring *)
 
   type error = [ `Retry | `Suspended | `Msg of string ]
-  type 'a result = ('a, error) Result.t
+
+  type 'a result = ('a, error) Result.result
   val pp_error : Format.formatter -> error -> unit
-  val open_error : 'a result -> ('a, [> error]) Result.t
-  val error_to_msg : 'a result -> ('a, Result.msg) Result.t
+  val open_error : 'a result -> ('a, [> error]) Result.result
+  val error_to_msg : 'a result -> ('a, msg) Result.result
 
   val attach: ?queue:string -> ?client:string -> disk:disk -> unit -> t result Lwt.t
   (** [attach queue client blockdevice] attaches to a previously-created shared ring on top
@@ -84,7 +87,7 @@ module type RING = sig
       for debugging. Nothing should be assumed about the keys or the values;
       they should only be printed or logged. *)
 
-  type position with sexp_of
+  type position [@@deriving sexp_of]
   (** The position within a stream *)
 
   include COMPARABLE with type t := position
@@ -159,10 +162,10 @@ module type JOURNAL = sig
   (** An idempotent operation which we will perform at-least-once *)
 
   type error = [ `Msg of string ]
-  type 'a result = ('a, error) Result.t
+  type 'a result = ('a, error) Result.result
   val pp_error : Format.formatter -> error -> unit
-  val open_error : 'a result -> ('a, [> error]) Result.t
-  val error_to_msg : 'a result -> ('a, Result.msg) Result.t
+  val open_error : 'a result -> ('a, [> error]) Result.result
+  val error_to_msg : 'a result -> ('a, msg) Result.result
 
   val start: ?name:string -> ?client:string -> ?flush_interval:float -> ?retry_interval:float -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing

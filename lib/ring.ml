@@ -14,6 +14,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 open Sexplib.Std
+open Result
 open Lwt
 
 (* The format will be:
@@ -42,9 +43,9 @@ let int_of_bool = function
   | false -> 2
 
 let bool_of_int = function
-  | 1 -> `Ok true
-  | 2 -> `Ok false
-  | x -> `Error (`Msg (Printf.sprintf "Failed to unmarshal a bool: %d" x))
+  | 1 -> Ok true
+  | 2 -> Ok false
+  | x -> Error (`Msg (Printf.sprintf "Failed to unmarshal a bool: %d" x))
 
 let alloc sector_size =
   let page = Io_page.(to_cstruct (get 1)) in
@@ -60,21 +61,21 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     | `Suspended -> Format.pp_print_string fmt "Suspended"
     | `Msg x -> Format.pp_print_string fmt x
   let error_to_msg = function
-    | `Ok x -> `Ok x
-    | `Error `Retry -> `Error (`Msg "There was a transient failure and the operation should be retried")
-    | `Error `Suspended -> `Error (`Msg "There was a transient failure caused by the ring being suspended")
-    | `Error (`Msg x) -> `Error (`Msg x)
+    | Ok x -> Ok x
+    | Error `Retry -> Error (`Msg "There was a transient failure and the operation should be retried")
+    | Error `Suspended -> Error (`Msg "There was a transient failure caused by the ring being suspended")
+    | Error (`Msg x) -> Error (`Msg x)
   let open_error = function
-    | `Ok x -> `Ok x
-    | `Error `Retry -> `Error `Retry
-    | `Error `Suspended -> `Error `Suspended
-    | `Error (`Msg x) -> `Error (`Msg x)
-  type 'a result = ('a, error) Result.t
+    | Ok x -> Ok x
+    | Error `Retry -> Error `Retry
+    | Error `Suspended -> Error `Suspended
+    | Error (`Msg x) -> Error (`Msg x)
+  type 'a result = ('a, error) Result.result
   (*BISECT-IGNORE-END*)
 
   let (>>=) m f = Lwt.bind m (function
-    | `Ok x -> f x
-    | `Error x -> return (`Error x)
+    | Ok x -> f x
+    | Error x -> return (Error x)
     )
 
   (* Convert the block errors *)
@@ -87,16 +88,16 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
        disconnected. The best we can do is to propagate an unhandleable
        error upwards to where it can be logged, and the process / thread
        can exit. *)
-    | `Error `Unimplemented -> return (`Error (`Msg "BLOCK function is unimplemented"))
-    | `Error `Is_read_only -> return (`Error (`Msg "BLOCK device is read-only"))
-    | `Error `Disconnected -> return (`Error (`Msg "BLOCK device has already disconnected"))
+    | `Error `Unimplemented -> return (Error (`Msg "BLOCK function is unimplemented"))
+    | `Error `Is_read_only -> return (Error (`Msg "BLOCK device is read-only"))
+    | `Error `Disconnected -> return (Error (`Msg "BLOCK device has already disconnected"))
     (* This is a bad error which includes both permanent failures and
        I/O errors which could be recoverable. We will assume the error
        can be recovered and invite the upper layer to retry. *)
-    | `Error (`Unknown x) -> return (`Error `Retry)
+    | `Error (`Unknown x) -> return (Error `Retry)
 
   let trace list =
-    Lwt.bind (Log.trace list) (fun () -> Lwt.return (`Ok ()))
+    Lwt.bind (Log.trace list) (fun () -> Lwt.return (Ok ()))
 
   let initialise device sector =
     (* Initialise the producer and consumer before writing the magic
@@ -107,30 +108,30 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     B.write device sector_consumer [ sector ] >>*= fun () ->
     Cstruct.blit_from_string magic 0 sector 0 (String.length magic);
     B.write device sector_signature [ sector ] >>*= fun () ->
-    return (`Ok ())
+    return (Ok ())
 
   let is_initialised device sector =
     (* check for magic, initialise if not found *)
     B.read device sector_signature [ sector ] >>*= fun () ->
     let magic' = String.make (String.length magic) '\000' in
     Cstruct.blit_to_string sector 0 magic' 0 (String.length magic');
-    return (`Ok (magic = magic'))
+    return (Ok (magic = magic'))
 
   let create device info sector =
     if info.B.size_sectors < minimum_size_sectors
-    then return (`Error (`Msg (Printf.sprintf "The block device is too small for a ring; the minimum size is %Ld sectors" minimum_size_sectors)))
+    then return (Error (`Msg (Printf.sprintf "The block device is too small for a ring; the minimum size is %Ld sectors" minimum_size_sectors)))
     else
       is_initialised device sector >>= function
-      | true -> return (`Ok ())
+      | true -> return (Ok ())
       | false -> initialise device sector
 
   let read sector_offset device sector =
     B.read device sector_offset [ sector ] >>*= fun () ->
-    return (`Ok ())
+    return (Ok ())
 
   let write sector_offset device sector =
     B.write device sector_offset [ sector ] >>*= fun () ->
-    return (`Ok ())
+    return (Ok ())
 
   type producer = {
     queue: string;
@@ -153,7 +154,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     B.read device sector_consumer [ sector ] >>*= fun () ->
     let consumer = Cstruct.LE.get_uint64 sector 0 in
     let suspend = Cstruct.get_uint8 sector 8 in
-    return (`Ok [
+    return (Ok [
       "producer/offset", Int64.to_string producer;
       "producer/suspend_ack", string_of_int suspend_ack;
       "consumer/offset", Int64.to_string consumer;
@@ -167,7 +168,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     >>= fun suspend_ack ->
     trace [ `Get(client, queue, `Producer, `Int64 producer); `Get(client, queue, `Suspend_ack, `Bool suspend_ack) ]
     >>= fun () ->
-    return (`Ok { queue; client; producer; suspend_ack })
+    return (Ok { queue; client; producer; suspend_ack })
 
   let set_producer ?(queue="") ?(client="") device sector v =
     zero sector;
@@ -179,7 +180,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     trace [ `Set(client, queue, `Producer, `Int64 v.producer); `Set(client, queue, `Suspend_ack, `Bool v.suspend_ack) ]
     >>= fun () ->
     B.write device sector_producer [ sector ] >>*= fun () ->
-    return (`Ok ())
+    return (Ok ())
 
   let get_consumer ?(queue="") ?(client="") device sector =
     B.read device sector_consumer [ sector ] >>*= fun () ->
@@ -188,7 +189,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     >>= fun suspend ->
     trace [ `Get(client, queue, `Consumer, `Int64 consumer); `Get(client, queue, `Suspend, `Bool suspend) ]
     >>= fun () ->
-    return (`Ok { queue; client; consumer; suspend })
+    return (Ok { queue; client; consumer; suspend })
 
   let set_consumer ?(queue="") ?(client="") device sector v =
     zero sector;
@@ -200,7 +201,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     trace [ `Set(client, queue, `Consumer, `Int64 v.consumer); `Set(client, queue, `Suspend, `Bool v.suspend) ]
     >>= fun () ->
     B.write device sector_consumer [ sector ] >>*= fun () ->
-    return (`Ok ())
+    return (Ok ())
 
   let get_data_sectors info = Int64.(sub info.B.size_sectors sector_data)
 
@@ -209,7 +210,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let offset = Int64.(to_int (rem byte_offset (of_int info.B.sector_size))) in
     (sector,offset)
 
-  type position = int64 with sexp_of
+  type position = int64 [@@deriving sexp_of]
 
   let compare (a: position) (b: position) =
     if a < b then `LessThan
@@ -223,7 +224,7 @@ module Make(Log: S.LOG)(B: S.BLOCK)(Item: S.CSTRUCTABLE) = struct
 module Producer = struct
   module C = Common(Log)(B)
 
-  type position = C.position with sexp_of
+  type position = C.position [@@deriving sexp_of]
   let compare = C.compare
   type item = Item.t
   type error = C.error
@@ -249,7 +250,7 @@ module Producer = struct
     let open C in
     let sector = alloc info.B.sector_size in
     create disk info sector >>= fun () ->
-    return (`Ok ())
+    return (Ok ())
 
   let detach t = with_lock @@ fun () ->
     t.attached <- false;
@@ -257,7 +258,7 @@ module Producer = struct
 
   let must_be_attached t f =
     if not t.attached
-    then return (`Error (`Msg "Ring has been detached and cannot be used"))
+    then return (Error (`Msg "Ring has been detached and cannot be used"))
     else f ()
 
   let ok_to_write t needed_bytes =
@@ -269,26 +270,26 @@ module Producer = struct
         let producer = { t.producer with suspend_ack = c.suspend } in
         set_producer ~client ~queue t.disk sector producer >>= fun () ->
         t.producer <- producer;
-        return (`Ok ())
-      end else return (`Ok ()) ) >>= fun () ->
+        return (Ok ())
+      end else return (Ok ()) ) >>= fun () ->
     if c.suspend
-    then return (`Error `Suspended)
+    then return (Error `Suspended)
     else
       let used = Int64.sub t.producer.producer c.consumer in
       let total = Int64.(mul (of_int t.info.B.sector_size) (C.get_data_sectors t.info)) in
       let total_sectors = get_data_sectors t.info in
       if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
-      then return (`Error (`Msg (Printf.sprintf "The ring is too small for a message of size %Ld bytes" needed_bytes)))
+      then return (Error (`Msg (Printf.sprintf "The ring is too small for a message of size %Ld bytes" needed_bytes)))
       else if Int64.sub total used < needed_bytes
-      then return (`Error `Retry)
-      else return (`Ok ())
+      then return (Error `Retry)
+      else return (Ok ())
 
   let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () = with_lock @@ fun () ->
     B.get_info disk >>= fun info ->
     let open C in
     let sector = alloc info.B.sector_size in
     is_initialised disk sector >>= function
-    | false -> return (`Error (`Msg "block ring has not been initialised"))
+    | false -> return (Error (`Msg "block ring has not been initialised"))
     | true ->
       get_producer ~queue ~client disk sector >>= fun producer ->
       let t = {
@@ -302,16 +303,16 @@ module Producer = struct
       (* acknowledge any pending suspend/resume from the consumer *)
       ok_to_write t 0L
       >>= fun _ ->
-      return (`Ok t)
+      return (Ok t)
 
   let state t = with_lock @@ fun () ->
     let open Lwt in
     ok_to_write t 0L
     >>= function
-    | `Error `Suspended -> return (`Ok `Suspended)
-    | `Error `Retry -> return (`Error (`Msg "Internal error: it should always be ok to write 0 bytes"))
-    | `Error x -> return (`Error x)
-    | `Ok () -> return (`Ok `Running)
+    | Error `Suspended -> return (Ok `Suspended)
+    | Error `Retry -> return (Error (`Msg "Internal error: it should always be ok to write 0 bytes"))
+    | Error x -> return (Error x)
+    | Ok () -> return (Ok `Running)
 
   let read_modify_write t offset fn =
     let open C in
@@ -321,7 +322,7 @@ module Producer = struct
     read realsector t.disk sector >>= fun () ->
     let result = fn sector in
     write realsector t.disk sector >>= fun () ->
-    return (`Ok result)
+    return (Ok result)
 
   let unsafe_write (t:t) item =
     let open C in
@@ -346,7 +347,7 @@ module Producer = struct
 
     let rec loop offset remaining =
       if Cstruct.len remaining = 0
-      then return (`Ok ())
+      then return (Ok ())
       else begin
         read_modify_write t offset (fun sector ->
           let this = min t.info.B.sector_size (Cstruct.len remaining) in
@@ -358,7 +359,7 @@ module Producer = struct
     loop (Int64.succ first_sector) remaining >>= fun () ->
       (* Write the payload before updating the producer pointer *)
     let new_producer = Int64.add t.producer.producer needed_bytes in
-    return (`Ok new_producer)
+    return (Ok new_producer)
 
   let advance ~t ~position:new_producer () = with_lock (fun () ->
     must_be_attached t
@@ -368,7 +369,7 @@ module Producer = struct
         let producer = { t.producer with producer = new_producer } in
         set_producer ~queue:t.queue ~client:t.client t.disk sector producer >>= fun () ->
         t.producer <- producer;
-        return (`Ok ())
+        return (Ok ())
       )
   )
 
@@ -395,7 +396,7 @@ end
 module Consumer = struct
   module C = Common(Log)(B)
 
-  type position = C.position with sexp_of
+  type position = C.position [@@deriving sexp_of]
   let compare = C.compare
   type item = Item.t
   type error = C.error
@@ -422,7 +423,7 @@ module Consumer = struct
 
   let must_be_attached t f =
     if not t.attached
-    then return (`Error (`Msg "Ring has been detached and cannot be used"))
+    then return (Error (`Msg "Ring has been detached and cannot be used"))
     else f ()
 
   let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () = with_lock @@ fun () ->
@@ -431,10 +432,10 @@ module Consumer = struct
     let open C in
     let sector = alloc info.B.sector_size in
     is_initialised disk sector >>= function
-    | false -> return (`Error (`Msg "block ring has not been initialised"))
+    | false -> return (Error (`Msg "block ring has not been initialised"))
     | true ->
       get_consumer ~queue ~client disk sector >>= fun consumer ->
-      return (`Ok {
+      return (Ok {
         disk;
         info;
         consumer;
@@ -450,13 +451,13 @@ module Consumer = struct
     get_producer ~client:client ~queue:queue t.disk sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
-    then return (`Error `Retry)
+    then return (Error `Retry)
     else begin
       let consumer = { t.consumer with C.suspend = true } in
       C.set_consumer ~queue:queue ~client:client t.disk sector consumer
       >>= fun () ->
       t.consumer <- consumer;
-      return (`Ok ())
+      return (Ok ())
     end
 
   let state t = with_lock @@ fun () ->
@@ -465,7 +466,7 @@ module Consumer = struct
     let sector = alloc t.info.B.sector_size in
     C.get_producer ~client ~queue t.disk sector
     >>= fun p ->
-    return (`Ok (if p.C.suspend_ack then `Suspended else `Running))
+    return (Ok (if p.C.suspend_ack then `Suspended else `Running))
 
   let resume (t: t) = with_lock @@ fun () ->
     let open C in
@@ -473,13 +474,13 @@ module Consumer = struct
     C.get_producer ~client:t.client ~queue:t.queue t.disk sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
-    then return (`Error `Retry)
+    then return (Error `Retry)
     else
       let consumer = { t.consumer with C.suspend = false } in
       C.set_consumer ~queue:t.queue ~client:t.client t.disk sector consumer
       >>= fun () ->
       t.consumer <- consumer;
-      return (`Ok ())
+      return (Ok ())
 
   let pop t = with_lock @@ fun () ->
     let open C in
@@ -488,7 +489,7 @@ module Consumer = struct
     get_producer ~client:t.client ~queue:t.queue t.disk sector >>= fun producer ->
     let available_bytes = Int64.sub producer.producer t.consumer.consumer in
     if available_bytes <= 0L
-    then return (`Error `Retry)
+    then return (Error `Retry)
     else begin
       let first_sector,first_offset = get_sector_and_offset t.info t.consumer.consumer in
       read Int64.(add sector_data (rem first_sector total_sectors)) t.disk sector >>= fun () ->
@@ -499,7 +500,7 @@ module Consumer = struct
       Cstruct.blit frag 0 result 0 this;
       let rec loop consumer remaining =
         if Cstruct.len remaining = 0
-        then return (`Ok ())
+        then return (Ok ())
         else
           let this = min t.info.B.sector_size (Cstruct.len remaining) in
           let frag = Cstruct.sub remaining 0 this in
@@ -510,9 +511,9 @@ module Consumer = struct
       (* Read the payload before updating the consumer pointer *)
       let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (len)))) in
       match Item.of_cstruct result with
-      | None -> return (`Error (`Msg (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result)))))
+      | None -> return (Error (`Msg (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result)))))
       | Some result ->
-        return (`Ok (Int64.(add t.consumer.consumer needed_bytes),result))
+        return (Ok (Int64.(add t.consumer.consumer needed_bytes),result))
     end
 
   let pop ~t ?(from = t.consumer.C.consumer) () =
@@ -525,9 +526,9 @@ module Consumer = struct
     let open Lwt in
     pop ~t ~from ()
     >>= function
-    | `Error `Retry -> return (`Ok (from, acc))
-    | `Error x -> return (`Error x)
-    | `Ok (from, x) -> fold ~f ~t ~from ~init:(f x acc) ()
+    | Error `Retry -> return (Ok (from, acc))
+    | Error x -> return (Error x)
+    | Ok (from, x) -> fold ~f ~t ~from ~init:(f x acc) ()
 
   let advance ~t ~position:consumer () = with_lock @@ fun () ->
     must_be_attached t
@@ -537,7 +538,7 @@ module Consumer = struct
         let consumer' = { t.consumer with consumer = consumer } in
         set_consumer ~queue:t.queue ~client:t.client t.disk sector consumer' >>= fun () ->
         t.consumer <- consumer';
-        return (`Ok ())
+        return (Ok ())
       )
 
   let debug_info t = with_lock @@ fun () ->
