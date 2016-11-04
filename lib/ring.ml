@@ -210,7 +210,7 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let offset = Int64.(to_int (rem byte_offset (of_int info.B.sector_size))) in
     (sector,offset)
 
-  type position = int64 with sexp_of
+  type position = int64 [@@deriving sexp_of]
 
   let compare (a: position) (b: position) =
     if a < b then `LessThan
@@ -224,7 +224,7 @@ module Make(Log: S.LOG)(B: S.BLOCK)(Item: S.CSTRUCTABLE) = struct
 module Producer = struct
   module C = Common(Log)(B)
 
-  type position = C.position with sexp_of
+  type position = C.position [@@deriving sexp_of]
   let compare = C.compare
   type item = Item.t
   type error = C.error
@@ -396,7 +396,7 @@ end
 module Consumer = struct
   module C = Common(Log)(B)
 
-  type position = C.position with sexp_of
+  type position = C.position [@@deriving sexp_of]
   let compare = C.compare
   type item = Item.t
   type error = C.error

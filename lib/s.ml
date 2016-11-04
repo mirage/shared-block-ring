@@ -40,8 +40,8 @@ end
 type traced_operation = [
   | `Set of string * string * [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
   | `Get of string * string * [ `Producer | `Consumer | `Suspend | `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
-] with sexp
-type traced_operation_list = traced_operation list with sexp
+] [@@deriving sexp]
+type traced_operation_list = traced_operation list [@@deriving sexp]
 
 module type LOG = sig
   val debug : ('a, unit, string, unit Lwt.t) format4 -> 'a
@@ -87,7 +87,7 @@ module type RING = sig
       for debugging. Nothing should be assumed about the keys or the values;
       they should only be printed or logged. *)
 
-  type position with sexp_of
+  type position [@@deriving sexp_of]
   (** The position within a stream *)
 
   include COMPARABLE with type t := position
