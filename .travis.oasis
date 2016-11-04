@@ -13,7 +13,7 @@ Library shared_block
   Path:               lib
   Findlibname:        shared-block-ring
   Modules:            Ring, Journal, EraseBlock, S, Monad
-  BuildDepends:       cstruct, lwt, mirage-types, io-page, sexplib, ppx_sexp_conv, bisect, result
+  BuildDepends:       cstruct, lwt, mirage-types, io-page, sexplib, ppx_sexp_conv, bisect_ppx, result
 
 Executable "shared-block-ring"
   CompiledObject:     best
@@ -29,7 +29,7 @@ Executable test
   MainIs:             test.ml
   Custom:             true
   Install:            false
-  BuildDepends:       lwt, lwt.unix, mirage-block-unix, mirage-clock-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix, bisect
+  BuildDepends:       lwt, lwt.unix, mirage-block-unix, mirage-clock-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix, bisect_ppx
 
 Test test
   Command:            ./test.native

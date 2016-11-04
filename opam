@@ -28,7 +28,7 @@ depends: [
   "io-page"
   "io-page-unix"
   "cmdliner"
-  "bisect"
+  "bisect_ppx"
   "oasis"
   "result"
 ]
