@@ -4,20 +4,21 @@ open Sexplib.Std
 
 module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
   type t = {
-    mutable wake_up_at: float;
+    mutable wake_up_at: int64;
     mutable thread: unit Lwt.t option;
     m: Lwt_mutex.t;
     c: unit Lwt_condition.t;
+    clock: Clock.t;
     mutable wake_up: bool;
   }
 
-  let create () =
-    let wake_up_at = 0. in
+  let create clock () =
+    let wake_up_at = 0L in
     let thread = None in
     let m = Lwt_mutex.create () in
     let c = Lwt_condition.create () in
     let wake_up = false in
-    { wake_up_at; thread; m; c; wake_up }
+    { wake_up_at; thread; m; c; wake_up; clock}
 
   let rec next t =
     if t.wake_up then begin
@@ -30,10 +31,10 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     end
 
   let rec countdown t =
-    let now = Clock.time () in
-    Time.sleep (t.wake_up_at -. now)
+    let now = Clock.elapsed_ns t.clock in
+    Time.sleep_ns @@ Int64.sub t.wake_up_at now
     >>= fun () ->
-    let now = Clock.time () in
+    let now = Clock.elapsed_ns t.clock in
     if now >= t.wake_up_at then begin
       t.thread <- None;
       t.wake_up <- true;
@@ -42,8 +43,8 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     end else countdown t
 
   let reset t for_how_long =
-    let now = Clock.time () in
-    let new_deadline = now +. for_how_long in
+    let now = Clock.elapsed_ns t.clock in
+    let new_deadline = Int64.add now for_how_long in
     let old_deadline = t.wake_up_at in
     t.wake_up_at <- new_deadline;
     match t.thread with
@@ -69,6 +70,8 @@ module Make
   open R
 
   module Alarm = Alarm(Time)(Clock)
+
+  type clock = Clock.t
 
   type error = [ `Msg of string ]
   (*BISECT-IGNORE-BEGIN*)
@@ -100,8 +103,8 @@ module Make
     perform: Op.t list -> (unit, error) Result.result Lwt.t;
     alarm: Alarm.t;
     m: Lwt_mutex.t;
-    flush_interval: float;
-    retry_interval: float;
+    flush_interval: int64;
+    retry_interval: int64;
     (* Internally handle Error `Retry by sleeping on the cvar.
        All other errors are fatal. *)
     bind: 'a 'b 'c 'd. 
@@ -143,7 +146,7 @@ module Make
     Lwt_condition.broadcast t.cvar ();
     return (Ok ())
 
-  let start ?(name="unknown journal") ?(client="unknown") ?(flush_interval=0.) ?(retry_interval=5.) filename perform =
+  let start ?(name="unknown journal") ?(client="unknown") ?(flush_interval=0L) ?(retry_interval=(Duration.of_sec 5)) filename perform =
     let (>>|=) fn f = fn () >>= function
     | Error `Retry -> return (Error (`Msg "start: received `Retry"))
     | Error `Suspended -> return (Error (`Msg "start: received `Suspended"))
@@ -163,20 +166,21 @@ module Make
     >>|= fun c ->
     Producer.attach ~queue:name ~client ~disk:filename 
     >>|= fun p ->
+    Clock.connect () >>= fun clock ->
     let please_shutdown = false in
     let shutdown_complete = false in
     let cvar = Lwt_condition.create () in
     let consumed = None in
     let m = Lwt_mutex.create () in
     let data_available = true in
-    let alarm = Alarm.create () in
+    let alarm = Alarm.create clock () in
     let rec bind fn f = fn () >>= function
       | Error `Suspended -> return (Error (`Msg "Ring is suspended"))
       | Error (`Msg x) -> return (Error (`Msg x))
       | Error `Retry ->
         (* If we're out of space then allow the journal to replay
            immediately. *)
-        Alarm.reset alarm 0.;
+        Alarm.reset alarm 0L;
         Lwt_condition.wait cvar
         >>= fun () ->
         bind fn f
@@ -259,7 +263,7 @@ module Make
             Lwt_condition.wait t.cvar
             >>= fun () ->
             sync () in
-        let flush () = Alarm.reset t.alarm 0. in
+        let flush () = Alarm.reset t.alarm 0L in
         let waiter = { sync; flush } in
         return (Ok waiter)
     end

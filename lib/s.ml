@@ -148,7 +148,10 @@ module type CONSUMER = sig
       [position] which can be used to consume all the items at once. *)
 end
 
-module type CLOCK = V1.CLOCK
+module type CLOCK = sig
+  include V1.MCLOCK
+  val connect : unit -> t Lwt.t
+end
 module type TIME = V1_LWT.TIME
 
 module type JOURNAL = sig
@@ -167,7 +170,7 @@ module type JOURNAL = sig
   val open_error : 'a result -> ('a, [> error]) Result.result
   val error_to_msg : 'a result -> ('a, msg) Result.result
 
-  val start: ?name:string -> ?client:string -> ?flush_interval:float -> ?retry_interval:float -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
+  val start: ?name:string -> ?client:string -> ?flush_interval:int64 -> ?retry_interval:int64 -> disk -> (operation list -> unit result Lwt.t) -> t result Lwt.t
   (** Start a journal replay thread on a given disk, with the given processing
       function which will be applied at-least-once to every item in the journal.
       If a [flush_interval] is provided then every push will start a timer

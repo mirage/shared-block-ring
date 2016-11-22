@@ -46,10 +46,7 @@ let (>>|=) = bind
 
 let produce filename interval =
   let t =
-    Block.connect filename
-    >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Failed to open %s" filename))
-    | `Ok disk ->
+    Block.connect filename >>= fun disk ->
     Producer.attach ~disk
     >>|= fun p ->
     let rec loop () =
@@ -68,14 +65,11 @@ let produce filename interval =
   try
     `Ok (Lwt_main.run t)
   with e ->
-    `Error(false, Printexc.to_string e)
+    `Error (false, Printexc.to_string e)
 
 let consume filename interval =
   let t =
-    Block.connect filename
-    >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Failed to open %s" filename))
-    | `Ok disk ->
+    Block.connect filename >>= fun disk ->
     Consumer.attach ~disk
     >>|= fun c ->
     let rec loop () =
@@ -94,10 +88,7 @@ let consume filename interval =
 
 let create filename =
   let t =
-    Block.connect filename
-    >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
-    | `Ok disk ->
+    Block.connect filename >>= fun disk ->
     let module Eraser = Shared_block.EraseBlock.Make(Block) in
     Eraser.erase ~pattern:(Printf.sprintf "shared-block-ring/example/main.ml erased the %s volume; " filename) disk
     >>= function
@@ -111,10 +102,7 @@ let create filename =
 
 let diagnostics filename =
   let t =
-    Block.connect filename
-    >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
-    | `Ok disk ->
+    Block.connect filename >>= fun disk ->
     Consumer.attach ~disk
     >>|= fun c ->
     let rec loop ?from () =
@@ -135,10 +123,7 @@ let diagnostics filename =
 
 let suspend filename =
   let t =
-    Block.connect filename
-    >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
-    | `Ok disk ->
+    Block.connect filename >>= fun disk ->
     Consumer.attach ~disk
     >>|= fun c ->
     (fun () -> Consumer.suspend c)
@@ -151,10 +136,7 @@ let suspend filename =
 
 let resume filename =
   let t =
-    Block.connect filename
-    >>= function
-    | `Error x -> fail (Failure (Printf.sprintf "Failed to connect to %s" filename))
-    | `Ok disk ->
+    Block.connect filename >>= fun disk ->
     Consumer.attach ~disk
     >>|= fun c ->
     (fun () -> Consumer.resume c)
