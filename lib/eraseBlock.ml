@@ -15,18 +15,6 @@
 open Result
 open Lwt
 
-let block_error = function
-  | `Unknown x -> Error (`Msg x)
-  | `Unimplemented -> Error (`Msg "unimplemented")
-  | `Is_read_only -> Error (`Msg "device is read-only")
-  | `Disconnected -> Error (`Msg "disconnected")
-
-module IO = struct
-  let ( >>= ) m f = m >>= function
-  | `Error e -> return (block_error e)
-  | `Ok x -> f x
-end
-
 let block_size_pages = 1024
 
 module Make(B: S.BLOCK) = struct
@@ -39,7 +27,6 @@ module Make(B: S.BLOCK) = struct
     for i = 0 to Cstruct.len buffer - 1 do
       Cstruct.set_char buffer i (pattern.[i mod (String.length pattern)])
     done;
-    let open IO in
     let rec loop n =
       if n = info.B.size_sectors
       then return (Ok ())
@@ -48,7 +35,7 @@ module Make(B: S.BLOCK) = struct
         let needed = Int64.to_int (min (Int64.sub info.B.size_sectors n) (Int64.of_int buffer_in_sectors)) in
         let towrite = Cstruct.sub buffer 0 (needed * info.B.sector_size) in
         B.write t n [ towrite ]
-        >>= fun () ->
+        >>= function | Error _ as e -> Lwt.return e | Ok () ->
         loop (Int64.(add n (of_int needed))) in
     loop 0L
 end

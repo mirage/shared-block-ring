@@ -1,7 +1,13 @@
 language: c
 install: wget https://raw.githubusercontent.com/ocaml/ocaml-travisci-skeleton/master/.travis-opam.sh
-script: cp .travis.oasis _oasis && bash -ex .travis-opam.sh && bash -ex .coveralls.sh
+script: cp .travis.oasis _oasis && bash -ex .travis-opam.sh # && bash -ex .coveralls.sh
+sudo: required
 env:
-  - OCAML_VERSION=4.02 OPAM_VERSION=1.2.0
+  global:
+  - EXTRA_REMOTES="https://github.com/yomimono/mirage-dev.git#block-errors"
+  matrix:
+  - OCAML_VERSION=4.02
+  - OCAML_VERSION=4.03
+  - OCAML_VERSION=4.04
 notifications:
   slack: xseng:ge9mYWGZZGFQPv3LsBnQeFCR

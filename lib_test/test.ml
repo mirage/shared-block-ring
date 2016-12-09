@@ -28,7 +28,7 @@ end
 
 module Time = struct
   type 'a io = 'a Lwt.t
-  let sleep = Lwt_unix.sleep
+  let sleep_ns d = Duration.to_f d |> Lwt_unix.sleep
 end
 
 let find_unused_file () =
@@ -108,9 +108,7 @@ let test_push_pop length batch () =
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
     let toobig = String.create Int64.(to_int size) in
-    Block.connect name
-    >>= fun disk' ->
-    let disk = match disk' with `Ok disk -> disk | `Error y -> failwith "Got an error when expecting an OK" in
+    Block.connect name >>= fun disk ->
     let open Lwt_result in
     Producer.create ~disk () >>= fun () ->
     Producer.attach ~client:"test" ~queue:"test_push_pop" ~disk () >>= fun producer ->
@@ -183,8 +181,7 @@ let test_suspend () =
     fresh_file size
     >>= fun name ->
 
-    Block.connect name >>= fun disk' ->
-    let disk = match disk' with `Ok disk -> disk | `Error y -> failwith "Got an error when expecting an OK" in
+    Block.connect name >>= fun disk ->
     let open Lwt_result in
 
     Producer.create ~disk () >>= fun () ->
@@ -233,8 +230,7 @@ let test_suspend_advance_interleaved () =
     >>= fun name ->
 
 
-    Block.connect name >>= fun disk' ->
-    let disk = match disk' with `Ok disk -> disk | `Error y -> failwith "Got an error when expecting an OK" in
+    Block.connect name >>= fun disk ->
     let open Lwt_result in
     Producer.create ~disk () >>= fun () ->
     Producer.attach ~client:"test" ~queue:"test_suspend" ~disk () >>= fun producer ->
@@ -276,11 +272,9 @@ let test_journal () =
   let t =
     fresh_file size
     >>= fun name ->
-
-
-    Block.connect name >>= fun device' ->
-    let device = match device' with `Ok x -> x | `Error y -> failwith "Expecting an OK, got an Error" in
-    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
+    Block.connect name >>= fun device ->
+    Mclock.connect () >>= fun clock ->
+    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Mclock)(Op) in
     let open Lwt_result in
     let perform xs =
       List.iter (fun x ->
@@ -312,10 +306,9 @@ let test_journal_replay () =
     >>= fun name ->
 
 
-    Block.connect name >>= fun device' ->
-    let device = match device' with `Ok x -> x | `Error y -> failwith "Expecting an OK, got an Error" in
+    Block.connect name >>= fun device ->
     let open Lwt_result in
-    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Op) in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Mclock)(Op) in
     let attempts = Hashtbl.create 2 in
     let perform = function
       | [] -> return (Ok ())
@@ -323,7 +316,7 @@ let test_journal_replay () =
         let init = try Hashtbl.find attempts x with _ -> 0 in
         Hashtbl.replace attempts x (init+1);
         fail Not_found in
-    J.start ~client:"test" ~name:"test_journal_replay" ~retry_interval:0.1 device perform
+    J.start ~client:"test" ~name:"test_journal_replay" ~retry_interval:(Duration.of_f 0.1) device perform
     >>= fun j ->
     let open Lwt in
     J.push j "hello"
@@ -361,15 +354,14 @@ let test_journal_order () =
     fresh_file (Int64.of_int (512 + 512 + 512 + 512 + 8))
     >>= fun name ->
 
-    Block.connect name >>= fun device' ->
+    Block.connect name >>= fun device ->
 
     let open Lwt_result in
 
-    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Clock)(Int) in
-    let device = match device' with `Ok x -> x | `Error y -> failwith "Expecting an OK, got an Error" in
+    let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Mclock)(Int) in
 
     let counter = ref 0l in
-    let interval = 5. in
+    let interval = Duration.of_sec @@ 5 in
     let perform xs =
       let rec loop = function
       | [] -> return (Ok ())

@@ -82,19 +82,19 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
   let ( >>*= ) m f =
     let open Lwt in
     m >>= function
-    | `Ok x -> f x
+    | Ok x -> f x
     (* These fatal errors from the block layer indicate a software bug:
        code missing, device openeed read-only, or device prematurely
        disconnected. The best we can do is to propagate an unhandleable
        error upwards to where it can be logged, and the process / thread
        can exit. *)
-    | `Error `Unimplemented -> return (Error (`Msg "BLOCK function is unimplemented"))
-    | `Error `Is_read_only -> return (Error (`Msg "BLOCK device is read-only"))
-    | `Error `Disconnected -> return (Error (`Msg "BLOCK device has already disconnected"))
+    | Error `Unimplemented -> return (Error (`Msg "BLOCK function is unimplemented"))
+    | Error `Is_read_only -> return (Error (`Msg "BLOCK device is read-only"))
+    | Error `Disconnected -> return (Error (`Msg "BLOCK device has already disconnected"))
     (* This is a bad error which includes both permanent failures and
        I/O errors which could be recoverable. We will assume the error
        can be recovered and invite the upper layer to retry. *)
-    | `Error (`Unknown x) -> return (Error `Retry)
+    | Error (`Msg x) -> return (Error `Retry)
 
   let trace list =
     Lwt.bind (Log.trace list) (fun () -> Lwt.return (Ok ()))
