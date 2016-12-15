@@ -4,7 +4,7 @@ script: cp .travis.oasis _oasis && bash -ex .travis-opam.sh # && bash -ex .cover
 sudo: required
 env:
   global:
-  - EXTRA_REMOTES="https://github.com/yomimono/mirage-dev.git#block-errors"
+  - EXTRA_REMOTES="https://github.com/mirage/mirage-dev.git"
   matrix:
   - OCAML_VERSION=4.02
   - OCAML_VERSION=4.03
