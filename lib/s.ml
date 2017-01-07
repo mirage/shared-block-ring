@@ -17,7 +17,7 @@ open Sexplib.Std
 
 type msg = [ `Msg of string ]
 
-module type BLOCK = V1.BLOCK
+module type BLOCK = Mirage_types.BLOCK
   with type 'a io = 'a Lwt.t
   and type page_aligned_buffer = Cstruct.t
 
@@ -149,10 +149,10 @@ module type CONSUMER = sig
 end
 
 module type CLOCK = sig
-  include V1.MCLOCK
+  include Mirage_types.MCLOCK
   val connect : unit -> t Lwt.t
 end
-module type TIME = V1_LWT.TIME
+module type TIME = Mirage_types_lwt.TIME
 
 module type JOURNAL = sig
   type t
