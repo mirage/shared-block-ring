@@ -19,7 +19,7 @@ Library shared_block
   Path:               lib
   Findlibname:        shared-block-ring
   Modules:            Ring, Journal, EraseBlock, S, Monad
-  BuildDepends:       cstruct, lwt, mirage-types, io-page, sexplib, ppx_sexp_conv, result, duration, rresult
+  BuildDepends:       cstruct, lwt, mirage-types-lwt, mirage-types, io-page, sexplib, ppx_sexp_conv, result, duration, rresult
 
 Executable "shared-block-ring"
   CompiledObject:     best
