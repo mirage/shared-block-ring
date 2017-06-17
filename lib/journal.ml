@@ -13,7 +13,7 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
   }
 
   let create clock () =
-    let wake_up_at = 0L in
+    let wake_up_at = Int64.max_int in
     let thread = None in
     let m = Lwt_mutex.create () in
     let c = Lwt_condition.create () in
@@ -38,6 +38,7 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     if now >= t.wake_up_at then begin
       t.thread <- None;
       t.wake_up <- true;
+      t.wake_up_at <- Int64.max_int;
       Lwt_condition.signal t.c ();
       return ()
     end else countdown t
