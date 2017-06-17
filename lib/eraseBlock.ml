@@ -28,12 +28,12 @@ module Make(B: S.BLOCK) = struct
       Cstruct.set_char buffer i (pattern.[i mod (String.length pattern)])
     done;
     let rec loop n =
-      if n = info.B.size_sectors
+      if n = info.Mirage_block.size_sectors
       then return (Ok ())
       else
-        let buffer_in_sectors = Cstruct.len buffer / info.B.sector_size in
-        let needed = Int64.to_int (min (Int64.sub info.B.size_sectors n) (Int64.of_int buffer_in_sectors)) in
-        let towrite = Cstruct.sub buffer 0 (needed * info.B.sector_size) in
+        let buffer_in_sectors = Cstruct.len buffer / info.Mirage_block.sector_size in
+        let needed = Int64.to_int (min (Int64.sub info.Mirage_block.size_sectors n) (Int64.of_int buffer_in_sectors)) in
+        let towrite = Cstruct.sub buffer 0 (needed * info.Mirage_block.sector_size) in
         B.write t n [ towrite ]
         >>= function | Error _ as e -> Lwt.return e | Ok () ->
         loop (Int64.(add n (of_int needed))) in

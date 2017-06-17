@@ -17,9 +17,7 @@ open Sexplib.Std
 
 type msg = [ `Msg of string ]
 
-module type BLOCK = Mirage_types.BLOCK
-  with type 'a io = 'a Lwt.t
-  and type page_aligned_buffer = Cstruct.t
+module type BLOCK = Mirage_block_lwt.S
 
 module type COMPARABLE = sig
   type t
