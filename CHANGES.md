@@ -1,3 +1,6 @@
+## 2.3.0 (2017-02-09):
+- Replace camlp4 with ppx
+
 ## 2.2.0 (2016-04-18):
 - Bug fixes (including API changes) for concurrency issues
 - Switch to Lwt log
