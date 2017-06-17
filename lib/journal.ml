@@ -44,6 +44,7 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     end else countdown t
 
   let reset t for_how_long =
+    assert (for_how_long >= 0L);
     let now = Clock.elapsed_ns t.clock in
     let new_deadline = Int64.add now for_how_long in
     let old_deadline = t.wake_up_at in

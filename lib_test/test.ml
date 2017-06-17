@@ -28,7 +28,9 @@ end
 
 module Time = struct
   type 'a io = 'a Lwt.t
-  let sleep_ns d = Duration.to_f d |> Lwt_unix.sleep
+  let sleep_ns d =
+    assert (d >= 0L); (* Can't sleep for -ve time *)
+    Duration.to_f d |> Lwt_unix.sleep
 end
 
 let find_unused_file () =
