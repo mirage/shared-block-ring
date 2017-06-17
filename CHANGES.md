@@ -1,5 +1,6 @@
-## 2.3.1 (2017-06-17):
+## 2.4.0 (2017-06-17):
 - Replace io-page.unix with io-page-unix
+- Update to the Mirage 3 BLOCK interfaces
 
 ## 2.3.0 (2017-02-09):
 - Replace camlp4 with ppx
