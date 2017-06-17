@@ -73,28 +73,51 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
   type 'a result = ('a, error) Result.result
   (*BISECT-IGNORE-END*)
 
-  let (>>=) m f = Lwt.bind m (function
-    | Ok x -> f x
-    | Error x -> return (Error x)
-    )
+  module ResultM = struct
+    let (>>=) m f = Lwt.bind m (function
+      | Ok x -> f x
+      | Error x -> return (Error x)
+      )
+    let return x = Lwt.return (Ok x)
+  end
+  open ResultM
 
-  (* Convert the block errors *)
-  let ( >>*= ) m f =
-    let open Lwt in
-    m >>= function
-    | Ok x -> f x
-    (* These fatal errors from the block layer indicate a software bug:
-       code missing, device openeed read-only, or device prematurely
-       disconnected. The best we can do is to propagate an unhandleable
-       error upwards to where it can be logged, and the process / thread
-       can exit. *)
-    | Error `Unimplemented -> return (Error (`Msg "BLOCK function is unimplemented"))
-    | Error `Is_read_only -> return (Error (`Msg "BLOCK device is read-only"))
-    | Error `Disconnected -> return (Error (`Msg "BLOCK device has already disconnected"))
-    (* This is a bad error which includes both permanent failures and
-       I/O errors which could be recoverable. We will assume the error
-       can be recovered and invite the upper layer to retry. *)
-    | Error (`Msg x) -> return (Error `Retry)
+  module Lwt_write_error = struct
+    let (>>=) m f =
+      let open Lwt.Infix in
+      m >>= function
+      | Error `Is_read_only -> Lwt.return (Error `Is_read_only)
+      | Error `Disconnected -> Lwt.return (Error `Disconnected)
+      | Error `Unimplemented -> Lwt.return (Error `Unimplemented)
+      | Error x -> Lwt.return (Error x)
+      | Ok x -> f x
+    let to_msg m =
+      let open Lwt.Infix in
+      m >>= function
+      | Error `Disconnected -> Lwt.return (Error (`Msg "BLOCK device has already disconnected"))
+      | Error `Unimplemented -> Lwt.return (Error (`Msg "BLOCK function is unimplemented"))
+      | Error `Is_read_only -> Lwt.return (Error (`Msg "BLOCK device is read-only"))
+      | Error _ -> Lwt.return (Error (`Msg "Unknown error from BLOCK device"))
+      | Ok x -> Lwt.return (Ok x)
+    let return x = Lwt.return (Ok x)
+  end
+  module Lwt_read_error = struct
+    let (>>=) m f =
+      let open Lwt.Infix in
+      m >>= function
+      | Error `Disconnected -> Lwt.return (Error `Disconnected)
+      | Error `Unimplemented -> Lwt.return (Error `Unimplemented)
+      | Error x -> Lwt.return (Error x)
+      | Ok x -> f x
+    let to_msg m =
+      let open Lwt.Infix in
+      m >>= function
+      | Error `Disconnected -> Lwt.return (Error (`Msg "BLOCK device has already disconnected"))
+      | Error `Unimplemented -> Lwt.return (Error (`Msg "BLOCK function is unimplemented"))
+      | Error _ -> Lwt.return (Error (`Msg "Unknown error from BLOCK device"))
+      | Ok x -> Lwt.return (Ok x)
+    let return x = Lwt.return (Ok x)
+  end
 
   let trace list =
     Lwt.bind (Log.trace list) (fun () -> Lwt.return (Ok ()))
@@ -104,34 +127,34 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
        in case we crash in the middle *)
     zero sector;
     Cstruct.set_uint8 sector 8 (int_of_bool false);
-    B.write device sector_producer [ sector ] >>*= fun () ->
-    B.write device sector_consumer [ sector ] >>*= fun () ->
+    let open Lwt_write_error in
+    B.write device sector_producer [ sector ] >>= fun () ->
+    B.write device sector_consumer [ sector ] >>= fun () ->
     Cstruct.blit_from_string magic 0 sector 0 (String.length magic);
-    B.write device sector_signature [ sector ] >>*= fun () ->
-    return (Ok ())
+    B.write device sector_signature [ sector ] >>= fun () ->
+    return ()
 
   let is_initialised device sector =
+    let open Lwt_read_error in
     (* check for magic, initialise if not found *)
-    B.read device sector_signature [ sector ] >>*= fun () ->
+    B.read device sector_signature [ sector ] >>= fun () ->
     let magic' = String.make (String.length magic) '\000' in
     Cstruct.blit_to_string sector 0 magic' 0 (String.length magic');
-    return (Ok (magic = magic'))
+    return (magic = magic')
 
   let create device info sector =
-    if info.B.size_sectors < minimum_size_sectors
-    then return (Error (`Msg (Printf.sprintf "The block device is too small for a ring; the minimum size is %Ld sectors" minimum_size_sectors)))
-    else
-      is_initialised device sector >>= function
-      | true -> return (Ok ())
-      | false -> initialise device sector
+    let open ResultM in
+    if info.Mirage_block.size_sectors < minimum_size_sectors
+    then Lwt.return (Error (`Msg (Printf.sprintf "The block device is too small for a ring; the minimum size is %Ld sectors" minimum_size_sectors)))
+    else (Lwt_read_error.to_msg @@ is_initialised device sector) >>= function
+      | true -> return ()
+      | false -> Lwt_write_error.to_msg @@ initialise device sector
 
   let read sector_offset device sector =
-    B.read device sector_offset [ sector ] >>*= fun () ->
-    return (Ok ())
+    Lwt_read_error.to_msg @@ B.read device sector_offset [ sector ]
 
   let write sector_offset device sector =
-    B.write device sector_offset [ sector ] >>*= fun () ->
-    return (Ok ())
+    Lwt_write_error.to_msg @@ B.write device sector_offset [ sector ]
 
   type producer = {
     queue: string;
@@ -148,27 +171,27 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
   }
 
   let debug_info device sector =
-    B.read device sector_producer [ sector ] >>*= fun () ->
+    Lwt_read_error.to_msg @@ B.read device sector_producer [ sector ] >>= fun () ->
     let producer = Cstruct.LE.get_uint64 sector 0 in
     let suspend_ack = Cstruct.get_uint8 sector 8 in
-    B.read device sector_consumer [ sector ] >>*= fun () ->
+    Lwt_read_error.to_msg @@ B.read device sector_consumer [ sector ] >>= fun () ->
     let consumer = Cstruct.LE.get_uint64 sector 0 in
     let suspend = Cstruct.get_uint8 sector 8 in
-    return (Ok [
+    return [
       "producer/offset", Int64.to_string producer;
       "producer/suspend_ack", string_of_int suspend_ack;
       "consumer/offset", Int64.to_string consumer;
       "consumer/suspend", string_of_int suspend
-    ])
+    ]
 
   let get_producer ?(queue="") ?(client="") device sector =
-    B.read device sector_producer [ sector ] >>*= fun () ->
+    Lwt_read_error.to_msg @@ B.read device sector_producer [ sector ] >>= fun () ->
     let producer = Cstruct.LE.get_uint64 sector 0 in
-    return (bool_of_int (Cstruct.get_uint8 sector 8))
+    Lwt.return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend_ack ->
     trace [ `Get(client, queue, `Producer, `Int64 producer); `Get(client, queue, `Suspend_ack, `Bool suspend_ack) ]
     >>= fun () ->
-    return (Ok { queue; client; producer; suspend_ack })
+    return { queue; client; producer; suspend_ack }
 
   let set_producer ?(queue="") ?(client="") device sector v =
     zero sector;
@@ -179,17 +202,17 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
     trace [ `Set(client, queue, `Producer, `Int64 v.producer); `Set(client, queue, `Suspend_ack, `Bool v.suspend_ack) ]
     >>= fun () ->
-    B.write device sector_producer [ sector ] >>*= fun () ->
-    return (Ok ())
+    Lwt_write_error.to_msg @@ B.write device sector_producer [ sector ] >>= fun () ->
+    return ()
 
   let get_consumer ?(queue="") ?(client="") device sector =
-    B.read device sector_consumer [ sector ] >>*= fun () ->
+    Lwt_read_error.to_msg @@ B.read device sector_consumer [ sector ] >>= fun () ->
     let consumer = Cstruct.LE.get_uint64 sector 0 in
-    return (bool_of_int (Cstruct.get_uint8 sector 8))
+    Lwt.return (bool_of_int (Cstruct.get_uint8 sector 8))
     >>= fun suspend ->
     trace [ `Get(client, queue, `Consumer, `Int64 consumer); `Get(client, queue, `Suspend, `Bool suspend) ]
     >>= fun () ->
-    return (Ok { queue; client; consumer; suspend })
+    return { queue; client; consumer; suspend }
 
   let set_consumer ?(queue="") ?(client="") device sector v =
     zero sector;
@@ -200,14 +223,13 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     Cstruct.blit_from_string msg 0 sector 128 (min (512 - 128) (String.length msg));
     trace [ `Set(client, queue, `Consumer, `Int64 v.consumer); `Set(client, queue, `Suspend, `Bool v.suspend) ]
     >>= fun () ->
-    B.write device sector_consumer [ sector ] >>*= fun () ->
-    return (Ok ())
+    Lwt_write_error.to_msg @@ B.write device sector_consumer [ sector ]
 
-  let get_data_sectors info = Int64.(sub info.B.size_sectors sector_data)
+  let get_data_sectors info = Int64.(sub info.Mirage_block.size_sectors sector_data)
 
   let get_sector_and_offset info byte_offset =
-    let sector = Int64.(div byte_offset (of_int info.B.sector_size)) in
-    let offset = Int64.(to_int (rem byte_offset (of_int info.B.sector_size))) in
+    let sector = Int64.(div byte_offset (of_int info.Mirage_block.sector_size)) in
+    let offset = Int64.(to_int (rem byte_offset (of_int info.Mirage_block.sector_size))) in
     (sector,offset)
 
   type position = int64 [@@deriving sexp_of]
@@ -235,7 +257,7 @@ module Producer = struct
 
   type t = {
     disk: B.t;
-    info: B.info;
+    info: Mirage_block.info;
     mutable producer: C.producer; (* cache of the last value we wrote *)
     mutable attached: bool;
     queue: string;
@@ -248,9 +270,8 @@ module Producer = struct
   let create ~disk:disk () = with_lock @@ fun () ->
     B.get_info disk >>= fun info ->
     let open C in
-    let sector = alloc info.B.sector_size in
-    create disk info sector >>= fun () ->
-    return (Ok ())
+    let sector = alloc info.Mirage_block.sector_size in
+    create disk info sector
 
   let detach t = with_lock @@ fun () ->
     t.attached <- false;
@@ -264,32 +285,34 @@ module Producer = struct
   let ok_to_write t needed_bytes =
     let client, queue = t.client, t.queue in
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     get_consumer ~client ~queue t.disk sector >>= fun c ->
     ( if c.suspend <> t.producer.suspend_ack then begin
         let producer = { t.producer with suspend_ack = c.suspend } in
         set_producer ~client ~queue t.disk sector producer >>= fun () ->
         t.producer <- producer;
-        return (Ok ())
-      end else return (Ok ()) ) >>= fun () ->
+        return ()
+      end else return () ) >>= fun () ->
     if c.suspend
-    then return (Error `Suspended)
+    then Lwt.return (Error `Suspended)
     else
       let used = Int64.sub t.producer.producer c.consumer in
-      let total = Int64.(mul (of_int t.info.B.sector_size) (C.get_data_sectors t.info)) in
+      let total = Int64.(mul (of_int t.info.Mirage_block.sector_size) (C.get_data_sectors t.info)) in
       let total_sectors = get_data_sectors t.info in
-      if Int64.(mul total_sectors (of_int t.info.B.sector_size)) < needed_bytes
-      then return (Error (`Msg (Printf.sprintf "The ring is too small for a message of size %Ld bytes" needed_bytes)))
+      if Int64.(mul total_sectors (of_int t.info.Mirage_block.sector_size)) < needed_bytes
+      then Lwt.return (Error (`Msg (Printf.sprintf "The ring is too small for a message of size %Ld bytes" needed_bytes)))
       else if Int64.sub total used < needed_bytes
-      then return (Error `Retry)
-      else return (Ok ())
+      then Lwt.return (Error `Retry)
+      else return ()
 
   let attach ?(queue="unknown") ?(client="unknown") ~disk:disk () = with_lock @@ fun () ->
     B.get_info disk >>= fun info ->
     let open C in
-    let sector = alloc info.B.sector_size in
-    is_initialised disk sector >>= function
-    | false -> return (Error (`Msg "block ring has not been initialised"))
+    let open ResultM in
+    let sector = alloc info.Mirage_block.sector_size in
+    Lwt_read_error.to_msg @@ is_initialised disk sector >>= function
+    | false -> Lwt.return (Error (`Msg "block ring has not been initialised"))
     | true ->
       get_producer ~queue ~client disk sector >>= fun producer ->
       let t = {
@@ -303,7 +326,7 @@ module Producer = struct
       (* acknowledge any pending suspend/resume from the consumer *)
       ok_to_write t 0L
       >>= fun _ ->
-      return (Ok t)
+      return t
 
   let state t = with_lock @@ fun () ->
     let open Lwt in
@@ -316,41 +339,43 @@ module Producer = struct
 
   let read_modify_write t offset fn =
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     let total_sectors = get_data_sectors t.info in
     let realsector = Int64.(add sector_data (rem offset total_sectors)) in
     read realsector t.disk sector >>= fun () ->
     let result = fn sector in
     write realsector t.disk sector >>= fun () ->
-    return (Ok result)
+    return result
 
   let unsafe_write (t:t) item =
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     (* add a 4 byte header of size, and round up to the next 4-byte offset *)
     let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (Cstruct.len item)))) in
-    let first_sector = Int64.(div t.producer.producer (of_int t.info.B.sector_size)) in
-    let first_offset = Int64.(to_int (rem t.producer.producer (of_int t.info.B.sector_size))) in
+    let first_sector = Int64.(div t.producer.producer (of_int t.info.Mirage_block.sector_size)) in
+    let first_offset = Int64.(to_int (rem t.producer.producer (of_int t.info.Mirage_block.sector_size))) in
 
     (* Do first sector. We know that we'll always be able to fit in the length header into
        the first page as it's only a 4-byte integer and we're padding to 4-byte offsets. *)
     read_modify_write t first_sector (fun sector ->
       (* Write the header and anything else we can *)
       Cstruct.LE.set_uint32 sector first_offset (Int32.of_int (Cstruct.len item));
-      if first_offset + 4 = t.info.B.sector_size
+      if first_offset + 4 = t.info.Mirage_block.sector_size
       then item (* We can't write anything else, so just return the item *)
       else begin
-        let this = min (t.info.B.sector_size - first_offset - 4) (Cstruct.len item) in
+        let this = min (t.info.Mirage_block.sector_size - first_offset - 4) (Cstruct.len item) in
         Cstruct.blit item 0 sector (first_offset + 4) this;
         Cstruct.shift item this
       end) >>= fun remaining ->
 
     let rec loop offset remaining =
       if Cstruct.len remaining = 0
-      then return (Ok ())
+      then return ()
       else begin
         read_modify_write t offset (fun sector ->
-          let this = min t.info.B.sector_size (Cstruct.len remaining) in
+          let this = min t.info.Mirage_block.sector_size (Cstruct.len remaining) in
           let frag = Cstruct.sub sector 0 this in
           Cstruct.blit remaining 0 frag 0 (Cstruct.len frag);
           Cstruct.shift remaining this) >>= fun remaining ->
@@ -359,17 +384,18 @@ module Producer = struct
     loop (Int64.succ first_sector) remaining >>= fun () ->
       (* Write the payload before updating the producer pointer *)
     let new_producer = Int64.add t.producer.producer needed_bytes in
-    return (Ok new_producer)
+    return new_producer
 
   let advance ~t ~position:new_producer () = with_lock (fun () ->
     must_be_attached t
       (fun () ->
         let open C in
-        let sector = alloc t.info.B.sector_size in
+        let open ResultM in
+        let sector = alloc t.info.Mirage_block.sector_size in
         let producer = { t.producer with producer = new_producer } in
         set_producer ~queue:t.queue ~client:t.client t.disk sector producer >>= fun () ->
         t.producer <- producer;
-        return (Ok ())
+        return ()
       )
   )
 
@@ -380,6 +406,7 @@ module Producer = struct
         (* every item has a 4 byte header *)
         let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
         let open C in
+        let open ResultM in
         ok_to_write t needed_bytes
         >>= fun () ->
         unsafe_write t item
@@ -387,7 +414,7 @@ module Producer = struct
   )
 
   let debug_info t = with_lock (fun () ->
-    let sector = alloc t.info.B.sector_size in
+    let sector = alloc t.info.Mirage_block.sector_size in
     C.debug_info t.disk sector
   )
 
@@ -407,7 +434,7 @@ module Consumer = struct
 
   type t = {
     disk: B.t;
-    info: B.info;
+    info: Mirage_block.info;
     mutable consumer: C.consumer; (* cache of the last value we wrote *)
     mutable attached: bool;
     queue: string;
@@ -430,79 +457,84 @@ module Consumer = struct
     let open Lwt in
     B.get_info disk >>= fun info ->
     let open C in
-    let sector = alloc info.B.sector_size in
-    is_initialised disk sector >>= function
-    | false -> return (Error (`Msg "block ring has not been initialised"))
+    let open ResultM in
+    let sector = alloc info.Mirage_block.sector_size in
+    Lwt_read_error.to_msg @@ is_initialised disk sector >>= function
+    | false -> Lwt.return (Error (`Msg "block ring has not been initialised"))
     | true ->
       get_consumer ~queue ~client disk sector >>= fun consumer ->
-      return (Ok {
+      return {
         disk;
         info;
         consumer;
         attached = true;
         queue;
         client;
-      })
+      }
 
   let suspend (t:t) = with_lock @@ fun () ->
     let client, queue = t.client, t.queue in
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     get_producer ~client:client ~queue:queue t.disk sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
-    then return (Error `Retry)
+    then Lwt.return (Error `Retry)
     else begin
       let consumer = { t.consumer with C.suspend = true } in
       C.set_consumer ~queue:queue ~client:client t.disk sector consumer
       >>= fun () ->
       t.consumer <- consumer;
-      return (Ok ())
+      return ()
     end
 
   let state t = with_lock @@ fun () ->
     let client, queue = t.client, t.queue in
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     C.get_producer ~client ~queue t.disk sector
     >>= fun p ->
-    return (Ok (if p.C.suspend_ack then `Suspended else `Running))
+    return (if p.C.suspend_ack then `Suspended else `Running)
 
   let resume (t: t) = with_lock @@ fun () ->
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     C.get_producer ~client:t.client ~queue:t.queue t.disk sector
     >>= fun producer ->
     if t.consumer.C.suspend <> producer.C.suspend_ack
-    then return (Error `Retry)
+    then Lwt.return (Error `Retry)
     else
       let consumer = { t.consumer with C.suspend = false } in
       C.set_consumer ~queue:t.queue ~client:t.client t.disk sector consumer
       >>= fun () ->
       t.consumer <- consumer;
-      return (Ok ())
+      return ()
 
   let pop t = with_lock @@ fun () ->
     let open C in
-    let sector = alloc t.info.B.sector_size in
+    let open ResultM in
+    let sector = alloc t.info.Mirage_block.sector_size in
     let total_sectors = get_data_sectors t.info in
     get_producer ~client:t.client ~queue:t.queue t.disk sector >>= fun producer ->
     let available_bytes = Int64.sub producer.producer t.consumer.consumer in
     if available_bytes <= 0L
-    then return (Error `Retry)
+    then Lwt.return (Error `Retry)
     else begin
       let first_sector,first_offset = get_sector_and_offset t.info t.consumer.consumer in
       read Int64.(add sector_data (rem first_sector total_sectors)) t.disk sector >>= fun () ->
       let len = Int32.to_int (Cstruct.LE.get_uint32 sector first_offset) in
       let result = Cstruct.create len in
-      let this = min len (t.info.B.sector_size - first_offset - 4) in
+      let this = min len (t.info.Mirage_block.sector_size - first_offset - 4) in
       let frag = Cstruct.sub sector (4 + first_offset) this in
       Cstruct.blit frag 0 result 0 this;
       let rec loop consumer remaining =
         if Cstruct.len remaining = 0
-        then return (Ok ())
+        then return ()
         else
-          let this = min t.info.B.sector_size (Cstruct.len remaining) in
+          let this = min t.info.Mirage_block.sector_size (Cstruct.len remaining) in
           let frag = Cstruct.sub remaining 0 this in
           read Int64.(add sector_data (rem consumer total_sectors)) t.disk sector >>= fun () ->
           Cstruct.blit sector 0 frag 0 this;
@@ -511,9 +543,9 @@ module Consumer = struct
       (* Read the payload before updating the consumer pointer *)
       let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (len)))) in
       match Item.of_cstruct result with
-      | None -> return (Error (`Msg (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result)))))
+      | None -> Lwt.return (Error (`Msg (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result)))))
       | Some result ->
-        return (Ok (Int64.(add t.consumer.consumer needed_bytes),result))
+        return (Int64.(add t.consumer.consumer needed_bytes),result)
     end
 
   let pop ~t ?(from = t.consumer.C.consumer) () =
@@ -534,15 +566,16 @@ module Consumer = struct
     must_be_attached t
       (fun () ->
         let open C in
-        let sector = alloc t.info.B.sector_size in
+        let open ResultM in
+        let sector = alloc t.info.Mirage_block.sector_size in
         let consumer' = { t.consumer with consumer = consumer } in
         set_consumer ~queue:t.queue ~client:t.client t.disk sector consumer' >>= fun () ->
         t.consumer <- consumer';
-        return (Ok ())
+        return ()
       )
 
   let debug_info t = with_lock @@ fun () ->
-    let sector = alloc t.info.B.sector_size in
+    let sector = alloc t.info.Mirage_block.sector_size in
     C.debug_info t.disk sector
 end
 end

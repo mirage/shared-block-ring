@@ -4,9 +4,8 @@ script: cp .travis.oasis _oasis && bash -ex .travis-opam.sh # && bash -ex .cover
 sudo: required
 env:
   global:
-  - EXTRA_REMOTES="https://github.com/mirage/mirage-dev.git"
+  - EXTRA_REMOTES="https://github.com/djs55/opam-repository.git#io-page"
   matrix:
-  - OCAML_VERSION=4.02
   - OCAML_VERSION=4.03
   - OCAML_VERSION=4.04
 notifications:

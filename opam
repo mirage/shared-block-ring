@@ -15,19 +15,20 @@ build: [
 install: [make "install"]
 remove: [["ocamlfind" "remove" "shared-block-ring"]]
 depends: [
-  "cstruct" {>= "0.7.1"}
+  "cstruct" {>= "3.0.0"}
+  "ppx_cstruct" {build}
   "ppx_tools" {build}
+  "ppx_deriving" {build}
   "ppx_sexp_conv" {build}
   "lwt"
   "ocamlfind"
   "ounit"
-  "mirage-types" {>= "3.0.0"}
   "mirage-types-lwt" {>= "3.0.0"}
   "mirage-block-unix"
   "mirage-clock-unix"
   "sexplib"
   "io-page"
-  "io-page-unix"
+  "io-page-unix" {>= "2.0.0"}
   "cmdliner"
   "bisect_ppx"
   "oasis"
