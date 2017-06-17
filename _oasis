@@ -27,7 +27,7 @@ Executable "shared-block-ring"
   MainIs:             main.ml
   Custom:             true
   Install:            false
-  BuildDepends:       lwt, lwt.unix, mirage-block-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix, cmdliner
+  BuildDepends:       lwt, lwt.unix, mirage-block-unix, shared-block-ring, cstruct, oUnit, io-page, io-page-unix, cmdliner
 
 Executable test
   CompiledObject:     best
@@ -35,7 +35,7 @@ Executable test
   MainIs:             test.ml
   Custom:             true
   Install:            false
-  BuildDepends:       lwt, lwt.unix, mirage-block-unix, mirage-clock-unix, shared-block-ring, cstruct, oUnit, io-page, io-page.unix
+  BuildDepends:       lwt, lwt.unix, mirage-block-unix, mirage-clock-unix, shared-block-ring, cstruct, oUnit, io-page, io-page-unix
 
 Test test
   Command:            ./test.native

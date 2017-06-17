@@ -27,7 +27,7 @@ depends: [
   "mirage-clock-unix"
   "sexplib"
   "io-page"
-  "io-page-unix"
+  "io-page-unix" {>= "2.0.0"}
   "cmdliner"
   "bisect_ppx"
   "oasis"
