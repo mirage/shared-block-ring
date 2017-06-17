@@ -1,3 +1,6 @@
+## 2.3.1 (2017-06-17):
+- Replace io-page.unix with io-page-unix
+
 ## 2.3.0 (2017-02-09):
 - Replace camlp4 with ppx
 
