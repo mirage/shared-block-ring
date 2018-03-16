@@ -138,9 +138,9 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
     let open Lwt_read_error in
     (* check for magic, initialise if not found *)
     B.read device sector_signature [ sector ] >>= fun () ->
-    let magic' = String.make (String.length magic) '\000' in
-    Cstruct.blit_to_string sector 0 magic' 0 (String.length magic');
-    return (magic = magic')
+    let magic' = Bytes.make (String.length magic) '\000' in
+    Cstruct.blit_to_bytes sector 0 magic' 0 (Bytes.length magic');
+    return (Bytes.unsafe_to_string magic' = magic)
 
   let create device info sector =
     let open ResultM in
@@ -351,7 +351,7 @@ module Producer = struct
   let unsafe_write (t:t) item =
     let open C in
     let open ResultM in
-    let sector = alloc t.info.Mirage_block.sector_size in
+    let _sector = alloc t.info.Mirage_block.sector_size in
     (* add a 4 byte header of size, and round up to the next 4-byte offset *)
     let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (Cstruct.len item)))) in
     let first_sector = Int64.(div t.producer.producer (of_int t.info.Mirage_block.sector_size)) in

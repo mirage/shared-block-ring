@@ -109,7 +109,7 @@ let test_push_pop length batch () =
     >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
-    let toobig = String.create Int64.(to_int size) in
+    let toobig = Bytes.create Int64.(to_int size) in
     Block.connect name >>= fun disk ->
     let open Lwt_result in
     Producer.create ~disk () >>= fun () ->
@@ -136,7 +136,7 @@ let test_push_pop length batch () =
         let rec push = function
         | 0 -> return ()
         | m ->
-          Producer.push ~t:producer ~item:toobig () >>= fun r ->
+          Producer.push ~t:producer ~item:(Bytes.unsafe_to_string toobig) () >>= fun r ->
           ignore(get_error r);
           Producer.push ~t:producer ~item:payload () >>= fun r ->
           let position = get_ok r in
@@ -291,7 +291,7 @@ let test_journal () =
     let open Lwt in
     w.J.sync ()
     >>= fun () ->
-    J.push j (String.create (Int64.to_int size))
+    J.push j (Bytes.unsafe_to_string @@ Bytes.create (Int64.to_int size))
     >>= fun t ->
     ignore(get_error t);
     J.shutdown j
