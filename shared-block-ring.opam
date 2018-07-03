@@ -10,19 +10,19 @@ tags: [
   "org:xapi-project"
 ]
 build: [
-  [make "all"]
+  ["jbuilder" "subst"] {pinned}
+  ["jbuilder" "build" "-p" name "-j" jobs]
 ]
-install: [make "install"]
-remove: [["ocamlfind" "remove" "shared-block-ring"]]
+build-test: [
+  ["jbuilder" "runtest" "-p" name]
+]
 depends: [
+  "jbuilder" {build & >="1.0+beta17"}
   "cstruct" {>= "3.0.0"}
-  "ppx_cstruct" {build}
-  "ppx_tools" {build}
-  "ppx_deriving" {build}
-  "ppx_sexp_conv" {build}
-  "lwt"
-  "ocamlfind"
-  "ounit"
+  "ppx_cstruct"
+  "ppx_deriving"
+  "ppx_sexp_conv" {>="v0.10.0"}
+  "lwt" 
   "mirage-types-lwt" {>= "3.0.0"}
   "mirage-block-unix"
   "mirage-clock-unix"
@@ -31,8 +31,8 @@ depends: [
   "io-page-unix" {>= "2.0.0"}
   "cmdliner"
   "bisect_ppx"
-  "oasis"
   "result"
   "rresult"
   "duration"
+  "ounit" {test}
 ]
