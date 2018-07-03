@@ -19,7 +19,7 @@ open Lwt
 open OUnit
 
 (* Let's try to adopt the conventions of Rresult.R *)
-let get_ok = function | Ok x -> x | Error y -> raise (Invalid_argument "get_ok encountered an Error")
+let get_ok = function | Ok x -> x | Error _ -> raise (Invalid_argument "get_ok encountered an Error")
 let get_error = function | Error x -> x | Ok _ -> raise (Invalid_argument "get_error encountered an OK")
 
 module Lwt_result = struct
@@ -37,7 +37,7 @@ let find_unused_file () =
   (* Find a filename which doesn't exist *)
   let rec does_not_exist i =
     let name = Printf.sprintf "%s/mirage-block-test.%d.%d"
-      Filename.temp_dir_name (Unix.getpid ()) i in
+      (Filename.get_temp_dir_name ()) (Unix.getpid ()) i in
     if Sys.file_exists name
     then does_not_exist (i + 1)
     else name in
@@ -103,13 +103,13 @@ open R
 
 let size = 16384L
 
-let test_push_pop length batch () =
+let test_push_pop _length batch () =
   let t : unit Lwt.t =
     fresh_file size
     >>= fun name ->
 
     let payload = "All work and no play makes Dave a dull boy.\n" in
-    let toobig = String.create Int64.(to_int size) in
+    let toobig = Bytes.create Int64.(to_int size) in
     Block.connect name >>= fun disk ->
     let open Lwt_result in
     Producer.create ~disk () >>= fun () ->
@@ -136,7 +136,7 @@ let test_push_pop length batch () =
         let rec push = function
         | 0 -> return ()
         | m ->
-          Producer.push ~t:producer ~item:toobig () >>= fun r ->
+          Producer.push ~t:producer ~item:(Bytes.to_string toobig) () >>= fun r ->
           ignore(get_error r);
           Producer.push ~t:producer ~item:payload () >>= fun r ->
           let position = get_ok r in
@@ -275,7 +275,7 @@ let test_journal () =
     fresh_file size
     >>= fun name ->
     Block.connect name >>= fun device ->
-    Mclock.connect () >>= fun clock ->
+    Mclock.connect () >>= fun _clock ->
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Mclock)(Op) in
     let open Lwt_result in
     let perform xs =
@@ -291,7 +291,7 @@ let test_journal () =
     let open Lwt in
     w.J.sync ()
     >>= fun () ->
-    J.push j (String.create (Int64.to_int size))
+    J.push j (Bytes.create (Int64.to_int size) |> Bytes.to_string)
     >>= fun t ->
     ignore(get_error t);
     J.shutdown j
@@ -314,7 +314,7 @@ let test_journal_replay () =
     let attempts = Hashtbl.create 2 in
     let perform = function
       | [] -> return (Ok ())
-      | x::xs ->
+      | x::_ ->
         let init = try Hashtbl.find attempts x with _ -> 0 in
         Hashtbl.replace attempts x (init+1);
         fail Not_found in

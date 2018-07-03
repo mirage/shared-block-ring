@@ -44,7 +44,7 @@ let rec bind fn f = fn () >>= function
   | Ok x -> f x
 let (>>|=) = bind
 
-let produce filename interval =
+let produce filename _interval =
   let t =
     Block.connect filename >>= fun disk ->
     Producer.attach ~disk
@@ -52,7 +52,7 @@ let produce filename interval =
     let rec loop () =
       Lwt_io.read_line Lwt_io.stdin
       >>= fun item ->
-      let rec write () =
+      let write () =
         Producer.push ~t:p ~item
         >>|= fun position ->
         Producer.advance ~t:p ~position
@@ -67,7 +67,7 @@ let produce filename interval =
   with e ->
     `Error (false, Printexc.to_string e)
 
-let consume filename interval =
+let consume filename _interval =
   let t =
     Block.connect filename >>= fun disk ->
     Consumer.attach ~disk
