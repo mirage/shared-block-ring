@@ -3,10 +3,9 @@ install: wget https://raw.githubusercontent.com/ocaml/ocaml-travisci-skeleton/ma
 script: cp .travis.oasis _oasis && bash -ex .travis-opam.sh # && bash -ex .coveralls.sh
 sudo: required
 env:
-  global:
-  - EXTRA_REMOTES="https://github.com/djs55/opam-repository.git#io-page"
   matrix:
   - OCAML_VERSION=4.03
   - OCAML_VERSION=4.04
+  - OCAML_VERSION=4.05
 notifications:
   slack: xseng:ge9mYWGZZGFQPv3LsBnQeFCR
