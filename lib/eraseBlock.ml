@@ -13,7 +13,6 @@
  *)
 
 open Result
-open Lwt
 
 let block_size_pages = 1024
 

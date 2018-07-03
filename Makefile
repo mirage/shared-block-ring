@@ -1,45 +1,44 @@
-.PHONY: all clean install build
-all: build doc
+.PHONY: build clean test
 
-NAME=shared-block-ring
-J=4
+build:
+	jbuilder build 
 
-export OCAMLRUNPARAM=b
+test:
+	jbuilder runtest
 
-setup.bin: setup.ml
-	@ocamlopt.opt -o $@ $< || ocamlopt -o $@ $< || ocamlc -o $@ $<
-	@rm -f setup.cmx setup.cmi setup.o setup.cmo
-
-setup.ml: _oasis
-	oasis setup
-
-setup.data: setup.bin
-	@./setup.bin -configure --enable-tests
-
-build: setup.data setup.bin
-	@./setup.bin -build -j $(J)
-
-doc: setup.data setup.bin
-	@./setup.bin -doc -j $(J)
-
-install: setup.bin
-	@./setup.bin -install
+install:
+	jbuilder install
 
 uninstall:
-	@ocamlfind remove $(NAME) || true
-
-test: setup.bin build
-	@./setup.bin -test
-
-reinstall: setup.bin
-	@ocamlfind remove $(NAME) || true
-	@./setup.bin -reinstall
+	jbuilder uninstall
 
 clean:
-	@ocamlbuild -clean
-	@rm -f setup.data setup.log setup.bin
+	jbuilder clean
 
-coverage:
-	rm -f _build/*.out
-	BISECT_FILE=_build/coverage ./setup.bin -test
-	(cd _build; bisect-report co*.out -summary-only -html /vagrant/report/)
+doc:
+	jbuilder build @doc
+
+publish-doc: doc
+	rm -rf .gh-pages
+	git clone `git config --get remote.origin.url` .gh-pages --reference .
+	git -C .gh-pages checkout --orphan gh-pages
+	git -C .gh-pages reset
+	git -C .gh-pages clean -dxf
+	cp -r _build/default/_doc/* .gh-pages/
+	git -C .gh-pages add .
+	git -C .gh-pages commit -m "Update Pages"
+	git -C .gh-pages push origin gh-pages -f
+	rm -rf .gh-pages
+
+REPO=../../mirage/opam-repository
+PACKAGES=$(REPO)/packages
+# until we have https://github.com/ocaml/opam-publish/issues/38
+pkg-%:
+	topkg opam pkg -n $*
+	mkdir -p $(PACKAGES)/$*
+	cp -r _build/$*.* $(PACKAGES)/$*/
+	cd $(PACKAGES) && git add $*
+
+PKGS=$(basename $(wildcard *.opam))
+opam-pkg:
+	$(MAKE) $(PKGS:%=pkg-%)

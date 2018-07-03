@@ -1,6 +1,5 @@
 open Result
 open Lwt
-open Sexplib.Std
 
 module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
   type t = {
@@ -74,8 +73,6 @@ module Make
   open R
 
   module Alarm = Alarm(Time)(Clock)
-
-  type clock = Clock.t
 
   type error = [ `Msg of string ]
   (*BISECT-IGNORE-BEGIN*)
@@ -237,7 +234,7 @@ module Make
     >>= fun () ->
     Consumer.detach t.c 
 
-  let rec push t item =
+  let push t item =
     let (>>|=) = t.bind in
     if t.please_shutdown
     then return (Error (`Msg "journal shutdown in progress"))

@@ -1,3 +1,8 @@
+## 2.5.0
+
+- Port to jbuilder
+- Make safe-string compatible
+
 ## 2.4.0 (2017-06-17):
 - Replace io-page.unix with io-page-unix
 - Update to the Mirage 3 BLOCK interfaces
