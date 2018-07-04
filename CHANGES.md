@@ -1,5 +1,4 @@
-## 2.5.0
-
+## 2.5.0 (2018-07-04)
 - Port to jbuilder
 - Make safe-string compatible
 
