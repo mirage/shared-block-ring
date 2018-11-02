@@ -20,7 +20,6 @@ depends: [
   "jbuilder" {build & >="1.0+beta17"}
   "cstruct" {>= "3.0.0"}
   "ppx_cstruct"
-  "ppx_deriving"
   "ppx_sexp_conv" {>="v0.10.0"}
   "lwt" 
   "lwt_log"
