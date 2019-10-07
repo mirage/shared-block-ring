@@ -17,7 +17,7 @@ build-test: [
   ["dune" "runtest" "-p" name "-j" jobs]
 ]
 depends: [
-  "dune" {build & >= "1.0"}
+  "dune"
   "cstruct" {>= "3.0.0"}
   "ppx_cstruct"
   "ppx_sexp_conv" {>="v0.10.0"}
