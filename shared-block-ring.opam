@@ -10,14 +10,14 @@ tags: [
   "org:xapi-project"
 ]
 build: [
-  ["jbuilder" "subst"] {pinned}
-  ["jbuilder" "build" "-p" name "-j" jobs]
+  ["dune" "subst"] {pinned}
+  ["dune" "build" "-p" name "-j" jobs]
 ]
 build-test: [
-  ["jbuilder" "runtest" "-p" name]
+  ["dune" "runtest" "-p" name "-j" jobs]
 ]
 depends: [
-  "jbuilder" {build & >="1.0+beta17"}
+  "dune"
   "cstruct" {>= "3.0.0"}
   "ppx_cstruct"
   "ppx_sexp_conv" {>="v0.10.0"}
