@@ -1,11 +1,18 @@
 language: c
 install: wget https://raw.githubusercontent.com/ocaml/ocaml-travisci-skeleton/master/.travis-opam.sh
-script: bash -ex .travis-opam.sh # && bash -ex .coveralls.sh
-sudo: required
+script:
+  - bash -ex .travis-opam.sh
+  - bisect-ppx-report html --coveralls coverage.json --service-name travis-ci --service-job-id $TRAVIS_JOB_ID
+  - curl -L -F json_file=@./coverage.json https://coveralls.io/api/v1/jobs
 env:
-  matrix:
-  - OCAML_VERSION=4.04
-  - OCAML_VERSION=4.05
-  - OCAML_VERSION=4.06
+  - BISECT_ENABLE=yes
+env:
+  jobs:
+    - OCAML_VERSION=4.04
+    - OCAML_VERSION=4.05
+    - OCAML_VERSION=4.06
+    - OCAML_VERSION=4.07
+    - OCAML_VERSION=4.08
+    - OCAML_VERSION=4.09
 notifications:
   slack: xseng:ge9mYWGZZGFQPv3LsBnQeFCR
