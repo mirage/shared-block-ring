@@ -14,16 +14,14 @@
  * PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Result
 open Lwt
 open OUnit
 
-(* Let's try to adopt the conventions of Rresult.R *)
-let get_ok = function | Ok x -> x | Error _ -> raise (Invalid_argument "get_ok encountered an Error")
-let get_error = function | Error x -> x | Ok _ -> raise (Invalid_argument "get_error encountered an OK")
+let get_ok = Rresult.R.get_ok
+let get_error = Rresult.R.get_error
 
 module Lwt_result = struct
-  let (>>=) m f = m >>= fun x -> f (get_ok x)
+  let ( >>= ) m f = Lwt.bind m (fun x -> f (get_ok x))
 end
 
 module Time = struct
@@ -150,7 +148,7 @@ let test_push_pop _length batch () =
           Consumer.pop ~t:consumer () >>= fun r ->
           let consumer_val, buffer = get_ok r in
           assert_equal ~printer:(fun x -> x) payload buffer;
-	  Consumer.advance ~t:consumer ~position:consumer_val () >>= fun r ->
+          Consumer.advance ~t:consumer ~position:consumer_val () >>= fun r ->
           get_ok r;
           pop (m - 1) in
         pop batch >>= fun () ->
@@ -222,7 +220,7 @@ let test_suspend () =
     (* The producer notices it immediately too *)
     Producer.state producer >>= fun r ->
     assert_equal `Running (get_ok r);
-    
+
     return () in
   Lwt_main.run t
 
@@ -275,7 +273,6 @@ let test_journal () =
     fresh_file size
     >>= fun name ->
     Block.connect name >>= fun device ->
-    Mclock.connect () >>= fun _clock ->
     let module J = Shared_block.Journal.Make(Log)(Block)(Time)(Mclock)(Op) in
     let open Lwt_result in
     let perform xs =
