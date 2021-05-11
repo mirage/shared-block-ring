@@ -2,8 +2,10 @@
  (name shared_block)
  (public_name shared-block-ring)
  (synopsis "Simple persistent queue over a block device")
- (libraries cstruct lwt mirage-block mirage-clock mirage-time io-page result
-   rresult sexplib sexplib0 duration)
+ (libraries cstruct lwt mirage-block mirage-clock mirage-time
+   io-page sexplib sexplib0 result rresult duration)
  (modules_without_implementation monad)
+ (instrumentation
+  (backend bisect_ppx))
  (preprocess
-  (pps ppx_sexp_conv bisect_ppx --conditional)))
+  (pps ppx_sexp_conv)))

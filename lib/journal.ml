@@ -74,17 +74,22 @@ module Make
   module Alarm = Alarm(Time)(Clock)
 
   type error = [ `Msg of string ]
-  (*BISECT-IGNORE-BEGIN*)
+
   let pp_error fmt = function
     | `Msg x -> Format.pp_print_string fmt x
+    [@coverage off]
+
   let error_to_msg = function
     | Ok x -> Ok x
     | Error (`Msg x) -> Error (`Msg x)
+    [@coverage off]
+
   let open_error = function
     | Ok x -> Ok x
     | Error (`Msg x) -> Error (`Msg x)
-  type 'a result = ('a, error) Result.result
-  (*BISECT-IGNORE-END*)
+    [@coverage off]
+
+  type 'a result = ('a, error) Result.result [@coverage off]
 
   type waiter = {
     flush: unit -> unit;
