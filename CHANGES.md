@@ -1,3 +1,10 @@
+## 3.0.0 (2021-05-13)
+
+- Port to dune and opam 2.0 metadata (@zapashcanon)
+- Replace `Lwt_log` usage with `Logs` (@psafont)
+- Use latest Mirage 3.7.1 interfaces (@psafont)
+- Do not directly depend on `ppx_deriving` (@jonludlam)
+
 ## 2.5.0 (2018-07-04)
 - Port to jbuilder
 - Make safe-string compatible
