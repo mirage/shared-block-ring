@@ -328,7 +328,8 @@ let test_journal_replay () =
 
     let hello_tries_ok = hello_tries > 1 in
     let hello2_tries_ok = hello2_tries = 0 in
-    Printf.fprintf stderr "hello_tries = %d hello2_tries = %d\n%!" hello_tries hello2_tries;
+    Logs_lwt.app (fun m -> m "hello_tries = %d hello2_tries = %d\n" hello_tries hello2_tries)
+    >>= fun () ->
     assert_equal ~printer:string_of_bool hello_tries_ok true;
     assert_equal ~printer:string_of_bool hello2_tries_ok true;
     let open Lwt in
@@ -393,6 +394,7 @@ let rec allpairs xs ys = match xs with
   | x :: xs -> List.map (fun y -> x, y) ys @ (allpairs xs ys)
 
 let _ =
+  Logs.set_reporter (Logs_fmt.reporter ()) ;
   let test_push_pops = List.map (fun (length, batch) ->
     Printf.sprintf "push pop %d bytes in batches of %d" length batch >:: (test_push_pop length batch)
   ) (allpairs interesting_lengths interesting_batch_sizes) in

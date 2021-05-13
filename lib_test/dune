@@ -5,9 +5,11 @@
   duration
   io-page
   io-page-unix
+  logs
+  logs.fmt
+  logs.lwt
   lwt
   lwt.unix
-  lwt_log
   mirage-block-unix
   mirage-clock-unix
   ounit2

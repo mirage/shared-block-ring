@@ -18,6 +18,7 @@ depends: [
   "duration"
   "io-page"
   "io-page-unix" {>= "2.0.0"}
+  "logs"
   "lwt"
   "lwt_log"
   "mirage-block" {>= "2.0.1"}

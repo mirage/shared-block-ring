@@ -7,8 +7,10 @@
   cstruct
   io-page
   io-page-unix
+  logs
+  logs.fmt
+  logs.lwt
   lwt
-  lwt_log
   lwt.unix
   mirage-block-unix
   shared-block-ring))
