@@ -1,5 +1,16 @@
 (executable
+ (modes byte exe)
  (name main)
  (public_name shared-block-ring)
- (libraries lwt lwt_log lwt.unix mirage-block-unix shared-block-ring cstruct
-   io-page io-page-unix cmdliner))
+ (libraries
+  cmdliner
+  cstruct
+  io-page
+  io-page-unix
+  logs
+  logs.fmt
+  logs.lwt
+  lwt
+  lwt.unix
+  mirage-block-unix
+  shared-block-ring))

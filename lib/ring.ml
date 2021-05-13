@@ -55,23 +55,27 @@ let alloc sector_size =
 module Common(Log: S.LOG)(B: S.BLOCK) = struct
   type error = [ `Retry | `Suspended | `Msg of string ]
 
-  (*BISECT-IGNORE-BEGIN*)
   let pp_error fmt = function
     | `Retry -> Format.pp_print_string fmt "Retry"
     | `Suspended -> Format.pp_print_string fmt "Suspended"
     | `Msg x -> Format.pp_print_string fmt x
+    [@coverage off]
+
   let error_to_msg = function
     | Ok x -> Ok x
     | Error `Retry -> Error (`Msg "There was a transient failure and the operation should be retried")
     | Error `Suspended -> Error (`Msg "There was a transient failure caused by the ring being suspended")
     | Error (`Msg x) -> Error (`Msg x)
+    [@coverage off]
+
   let open_error = function
     | Ok x -> Ok x
     | Error `Retry -> Error `Retry
     | Error `Suspended -> Error `Suspended
     | Error (`Msg x) -> Error (`Msg x)
-  type 'a result = ('a, error) Result.result
-  (*BISECT-IGNORE-END*)
+    [@coverage off]
+
+  type 'a result = ('a, error) Result.result [@coverage off]
 
   module ResultM = struct
     let (>>=) m f = Lwt.bind m (function

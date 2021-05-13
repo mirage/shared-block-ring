@@ -1,4 +1,20 @@
 (test
  (name test)
- (libraries lwt lwt_log lwt.unix mirage-block-unix mirage-clock-unix
-   shared-block-ring cstruct oUnit io-page io-page-unix))
+ (libraries
+  cstruct
+  duration
+  io-page
+  io-page-unix
+  logs
+  logs.fmt
+  logs.lwt
+  lwt
+  lwt.unix
+  mirage-block-unix
+  mirage-clock-unix
+  ounit2
+  rresult
+  sexplib
+  shared-block-ring)
+ (preprocess
+  (pps ppx_sexp_conv)))

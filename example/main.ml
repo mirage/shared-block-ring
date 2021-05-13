@@ -14,12 +14,12 @@
 open Result
 open Lwt
 
-let project_url = "http://github.com/djs55/shared-block-ring"
+let project_url = "http://github.com/mirage/shared-block-ring"
 
 module Log = struct
-  let debug fmt = Lwt_log.debug_f fmt
-  let info fmt = Lwt_log.info_f fmt
-  let error fmt = Lwt_log.error_f fmt
+  let debug fmt = Format.ksprintf (fun str -> Logs_lwt.debug ~src:Logs.default @@ fun m -> m "%s" str) fmt
+  let info fmt = Format.ksprintf (fun str -> Logs_lwt.info ~src:Logs.default @@ fun m -> m "%s" str) fmt
+  let error fmt = Format.ksprintf (fun str -> Logs_lwt.err ~src:Logs.default @@ fun m -> m "%s" str) fmt
 
   let trace _ = Lwt.return ()
 end
@@ -229,6 +229,7 @@ let default_cmd =
 let cmds = [create_cmd; produce_cmd; consume_cmd; suspend_cmd; resume_cmd; diagnostics_cmd]
 
 let _ =
+  Logs.set_reporter (Logs_fmt.reporter ());
   match Term.eval_choice default_cmd cmds with
   | `Error _ -> exit 1
   | _ -> exit 0

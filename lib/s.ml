@@ -17,7 +17,7 @@ open Sexplib.Std
 
 type msg = [ `Msg of string ]
 
-module type BLOCK = Mirage_block_lwt.S
+module type BLOCK = Mirage_block.S
 
 module type COMPARABLE = sig
   type t
@@ -147,10 +147,9 @@ module type CONSUMER = sig
 end
 
 module type CLOCK = sig
-  include Mirage_types.MCLOCK
-  val connect : unit -> t Lwt.t
+  include Mirage_clock.MCLOCK
 end
-module type TIME = Mirage_types_lwt.TIME
+module type TIME = Mirage_time.S
 
 module type JOURNAL = sig
   type t

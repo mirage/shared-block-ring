@@ -7,17 +7,16 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     mutable thread: unit Lwt.t option;
     m: Lwt_mutex.t;
     c: unit Lwt_condition.t;
-    clock: Clock.t;
     mutable wake_up: bool;
   }
 
-  let create clock () =
+  let create () =
     let wake_up_at = Int64.max_int in
     let thread = None in
     let m = Lwt_mutex.create () in
     let c = Lwt_condition.create () in
     let wake_up = false in
-    { wake_up_at; thread; m; c; wake_up; clock}
+    { wake_up_at; thread; m; c; wake_up}
 
   let rec next t =
     if t.wake_up then begin
@@ -30,7 +29,7 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
     end
 
   let rec countdown t =
-    let now = Clock.elapsed_ns t.clock in
+    let now = Clock.elapsed_ns () in
     let to_sleep_ns = Int64.sub t.wake_up_at now in
     if to_sleep_ns < 0L then begin
       t.thread <- None;
@@ -46,7 +45,7 @@ module Alarm(Time: S.TIME)(Clock: S.CLOCK) = struct
 
   let reset t for_how_long =
     assert (for_how_long >= 0L);
-    let now = Clock.elapsed_ns t.clock in
+    let now = Clock.elapsed_ns () in
     let new_deadline = Int64.add now for_how_long in
     let old_deadline = t.wake_up_at in
     t.wake_up_at <- new_deadline;
@@ -75,17 +74,22 @@ module Make
   module Alarm = Alarm(Time)(Clock)
 
   type error = [ `Msg of string ]
-  (*BISECT-IGNORE-BEGIN*)
+
   let pp_error fmt = function
     | `Msg x -> Format.pp_print_string fmt x
+    [@coverage off]
+
   let error_to_msg = function
     | Ok x -> Ok x
     | Error (`Msg x) -> Error (`Msg x)
+    [@coverage off]
+
   let open_error = function
     | Ok x -> Ok x
     | Error (`Msg x) -> Error (`Msg x)
-  type 'a result = ('a, error) Result.result
-  (*BISECT-IGNORE-END*)
+    [@coverage off]
+
+  type 'a result = ('a, error) Result.result [@coverage off]
 
   type waiter = {
     flush: unit -> unit;
@@ -108,7 +112,7 @@ module Make
     retry_interval: int64;
     (* Internally handle Error `Retry by sleeping on the cvar.
        All other errors are fatal. *)
-    bind: 'a 'b 'c 'd. 
+    bind: 'a 'b 'c 'd.
       (unit -> (('a, [< R.Consumer.error] as 'd) Result.result Lwt.t))
       -> ('a -> ('b, [> R.Consumer.error] as 'c) Result.result Lwt.t)
       -> ('b, [> R.Consumer.error] as 'c) Result.result Lwt.t
@@ -116,7 +120,7 @@ module Make
 
   let perform t items () =
     Lwt.catch
-      (fun () -> t.perform items) 
+      (fun () -> t.perform items)
       (fun e ->
          let msg = Printexc.to_string e in
          t.data_available <- true;
@@ -165,16 +169,15 @@ module Make
         return (Ok ()) ) >>|= fun () ->
     Consumer.attach ~queue:name ~client ~disk:filename
     >>|= fun c ->
-    Producer.attach ~queue:name ~client ~disk:filename 
+    Producer.attach ~queue:name ~client ~disk:filename
     >>|= fun p ->
-    Clock.connect () >>= fun clock ->
     let please_shutdown = false in
     let shutdown_complete = false in
     let cvar = Lwt_condition.create () in
     let consumed = None in
     let m = Lwt_mutex.create () in
     let data_available = true in
-    let alarm = Alarm.create clock () in
+    let alarm = Alarm.create () in
     let rec bind fn f = fn () >>= function
       | Error `Suspended -> return (Error (`Msg "Ring is suspended"))
       | Error (`Msg x) -> return (Error (`Msg x))
@@ -232,7 +235,7 @@ module Make
         loop () in
     loop ()
     >>= fun () ->
-    Consumer.detach t.c 
+    Consumer.detach t.c
 
   let push t item =
     let (>>|=) = t.bind in

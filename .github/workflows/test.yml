@@ -1,0 +1,39 @@
+name: shared-block-ring
+
+on: [push, pull_request]
+
+jobs:
+  tests:
+    name: Tests
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ocaml-version: ["4.12.0", "4.06.0"]
+        operating-system: [ubuntu-latest]
+
+    runs-on: ${{ matrix.operating-system }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Use OCaml ${{ matrix.ocaml-version }}
+        uses: avsm/setup-ocaml@v1
+        with:
+          ocaml-version: ${{ matrix.ocaml-version }}
+
+      - name: Install dependencies
+        run: |
+          opam pin add -n shared-block-ring .
+          opam depext -y shared-block-ring
+          opam install -t --deps-only .
+
+      - name: Build
+        run: opam exec -- make
+
+      - name: Run tests with coverage
+        run: opam exec -- dune runtest  --instrument-with bisect_ppx --force
+
+      - name: Upload coverage
+        run: opam exec -- bisect-ppx-report send-to Coveralls
