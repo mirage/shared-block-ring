@@ -47,7 +47,7 @@ let alloc sector_size =
   sector
 
 let fill_with_message buffer message =
-  for i = 0 to Cstruct.len buffer - 1 do
+  for i = 0 to Cstruct.length buffer - 1 do
     Cstruct.set_char buffer i (message.[i mod (String.length message)])
   done
 
