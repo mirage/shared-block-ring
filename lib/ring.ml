@@ -92,14 +92,12 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
       m >>= function
       | Error `Is_read_only -> Lwt.return (Error `Is_read_only)
       | Error `Disconnected -> Lwt.return (Error `Disconnected)
-      | Error `Unimplemented -> Lwt.return (Error `Unimplemented)
       | Error x -> Lwt.return (Error x)
       | Ok x -> f x
     let to_msg m =
       let open Lwt.Infix in
       m >>= function
       | Error `Disconnected -> Lwt.return (Error (`Msg "BLOCK device has already disconnected"))
-      | Error `Unimplemented -> Lwt.return (Error (`Msg "BLOCK function is unimplemented"))
       | Error `Is_read_only -> Lwt.return (Error (`Msg "BLOCK device is read-only"))
       | Error _ -> Lwt.return (Error (`Msg "Unknown error from BLOCK device"))
       | Ok x -> Lwt.return (Ok x)
@@ -110,14 +108,12 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
       let open Lwt.Infix in
       m >>= function
       | Error `Disconnected -> Lwt.return (Error `Disconnected)
-      | Error `Unimplemented -> Lwt.return (Error `Unimplemented)
       | Error x -> Lwt.return (Error x)
       | Ok x -> f x
     let to_msg m =
       let open Lwt.Infix in
       m >>= function
       | Error `Disconnected -> Lwt.return (Error (`Msg "BLOCK device has already disconnected"))
-      | Error `Unimplemented -> Lwt.return (Error (`Msg "BLOCK function is unimplemented"))
       | Error _ -> Lwt.return (Error (`Msg "Unknown error from BLOCK device"))
       | Ok x -> Lwt.return (Ok x)
     let return x = Lwt.return (Ok x)
