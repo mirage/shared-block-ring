@@ -12,12 +12,11 @@ bug-reports: "https://github.com/mirage/shared-block-ring/issues/"
 depends: [
   "ocaml" {>= "4.06.0"}
   "bisect_ppx" {dev & >= "2.5.0"}
-  "cmdliner"
+  "cmdliner" {>= "1.1.0"}
   "cstruct" {>= "6.0.0"}
   "dune" {>= "2.7.0"}
   "duration"
-  "io-page"
-  "io-page-unix" {>= "2.0.0"}
+  "io-page" {>= "2.4.0"}
   "logs"
   "lwt"
   "lwt_log"
