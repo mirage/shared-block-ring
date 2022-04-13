@@ -1,3 +1,9 @@
+## v3.0.1 (2022-04-13)
+- Avoid deprecated Cstruct.len (#62 @hannesm)
+- Adapt to mirage-block 3.0.0 changes (#62 @hannesm)
+- Update to cmdliner 1.1.0 (#62 @hannesm)
+- Remove io-page-unix dependency (#62 @hannesm)
+
 ## 3.0.0 (2021-05-13)
 
 - Port to dune and opam 2.0 metadata (@zapashcanon)
