@@ -4,7 +4,6 @@
   cstruct
   duration
   io-page
-  io-page-unix
   logs
   logs.fmt
   logs.lwt

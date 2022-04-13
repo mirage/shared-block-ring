@@ -171,8 +171,10 @@ let produce_cmd =
     `S "DESCRIPTION";
     `P "Read lines of text from stdin and push them as individual items onto the ring.";
   ] @ help in
-  Term.(ret(pure produce $ filename $ interval)),
-  Term.info "produce" ~doc ~man
+  let term = Term.(ret(const produce $ filename $ interval))
+  and info = Cmd.info "produce" ~doc ~man
+  in
+  Cmd.v info term
 
 let consume_cmd =
   let doc = "Pop data from the ring" in
@@ -180,8 +182,10 @@ let consume_cmd =
     `S "DESCRIPTION";
     `P "Read lines of text from the ring and print them to stdout.";
   ] @ help in
-  Term.(ret(pure consume $ filename $ interval)),
-  Term.info "consume" ~doc ~man
+  let term = Term.(ret(const consume $ filename $ interval))
+  and info = Cmd.info "consume" ~doc ~man
+  in
+  Cmd.v info term
 
 let create_cmd =
   let doc = "Create an empty ring" in
@@ -189,8 +193,10 @@ let create_cmd =
     `S "DESCRIPTION";
     `P "Initialise a device or file with an empty ring."
   ] @ help in
-  Term.(ret(pure create $ filename)),
-  Term.info "create" ~doc ~man
+  let term = Term.(ret(const create $ filename))
+  and info = Cmd.info "create" ~doc ~man
+  in
+  Cmd.v info term
 
 let diagnostics_cmd =
   let doc = "Display the current state of a ring." in
@@ -199,8 +205,10 @@ let diagnostics_cmd =
     `P "Display the current ring state including producer and consumer pointers, together with the current ring contents for diagnostic purposes.";
     `P "Note: the ring will not be modified."
   ] @ help in
-  Term.(ret(pure diagnostics $ filename)),
-  Term.info "diagnostics" ~doc ~man
+  let term = Term.(ret(const diagnostics $ filename))
+  and info = Cmd.info "diagnostics" ~doc ~man
+  in
+  Cmd.v info term
 
 let suspend_cmd =
   let doc = "Suspend the ring." in
@@ -208,8 +216,10 @@ let suspend_cmd =
     `S "DESCRIPTION";
     `P "Perform a co-operative suspend of the ring. Once finished, the producer will have acknowledged and promise not to send any more data.";
   ] @ help in
-  Term.(ret(pure suspend $ filename)),
-  Term.info "suspend" ~doc ~man
+  let term = Term.(ret(const suspend $ filename))
+  and info = Cmd.info "suspend" ~doc ~man
+  in
+  Cmd.v info term
 
 let resume_cmd =
   let doc = "Resume the ring." in
@@ -217,19 +227,19 @@ let resume_cmd =
     `S "DESCRIPTION";
     `P "Perform a co-operative resume of the ring. Once finished, the producer will have acknowledged and will be able to produce data.";
   ] @ help in
-  Term.(ret(pure resume $ filename)),
-  Term.info "resume" ~doc ~man
+  let term = Term.(ret(const resume $ filename))
+  and info = Cmd.info "resume" ~doc ~man
+  in
+  Cmd.v info term
 
-let default_cmd =
-  let doc = "manipulate shared rings on block devices" in
-  let man = help in
-  Term.(ret (pure (`Help (`Pager, None)))),
-  Term.info (Sys.argv.(0)) ~version:"1.0.0" ~doc ~man
+let default_cmd = Term.(ret (const (`Help (`Pager, None))))
 
 let cmds = [create_cmd; produce_cmd; consume_cmd; suspend_cmd; resume_cmd; diagnostics_cmd]
 
-let _ =
+let () =
   Logs.set_reporter (Logs_fmt.reporter ());
-  match Term.eval_choice default_cmd cmds with
-  | `Error _ -> exit 1
-  | _ -> exit 0
+  let doc = "manipulate shared rings on block devices" in
+  let man = help in
+  let info = Cmd.info (Sys.argv.(0)) ~version:"%%VERSION%%" ~doc ~man in
+  let group = Cmd.group ~default:default_cmd info cmds in
+  exit (Cmd.eval group)

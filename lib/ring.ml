@@ -34,7 +34,7 @@ let minimum_size_sectors = Int64.add sector_data 1L
 let magic = Printf.sprintf "mirage shared-block-device 1.0"
 
 let zero buf =
-  for i = 0 to Cstruct.len buf - 1 do
+  for i = 0 to Cstruct.length buf - 1 do
     Cstruct.set_uint8 buf i 0
   done
 
@@ -92,14 +92,12 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
       m >>= function
       | Error `Is_read_only -> Lwt.return (Error `Is_read_only)
       | Error `Disconnected -> Lwt.return (Error `Disconnected)
-      | Error `Unimplemented -> Lwt.return (Error `Unimplemented)
       | Error x -> Lwt.return (Error x)
       | Ok x -> f x
     let to_msg m =
       let open Lwt.Infix in
       m >>= function
       | Error `Disconnected -> Lwt.return (Error (`Msg "BLOCK device has already disconnected"))
-      | Error `Unimplemented -> Lwt.return (Error (`Msg "BLOCK function is unimplemented"))
       | Error `Is_read_only -> Lwt.return (Error (`Msg "BLOCK device is read-only"))
       | Error _ -> Lwt.return (Error (`Msg "Unknown error from BLOCK device"))
       | Ok x -> Lwt.return (Ok x)
@@ -110,14 +108,12 @@ module Common(Log: S.LOG)(B: S.BLOCK) = struct
       let open Lwt.Infix in
       m >>= function
       | Error `Disconnected -> Lwt.return (Error `Disconnected)
-      | Error `Unimplemented -> Lwt.return (Error `Unimplemented)
       | Error x -> Lwt.return (Error x)
       | Ok x -> f x
     let to_msg m =
       let open Lwt.Infix in
       m >>= function
       | Error `Disconnected -> Lwt.return (Error (`Msg "BLOCK device has already disconnected"))
-      | Error `Unimplemented -> Lwt.return (Error (`Msg "BLOCK function is unimplemented"))
       | Error _ -> Lwt.return (Error (`Msg "Unknown error from BLOCK device"))
       | Ok x -> Lwt.return (Ok x)
     let return x = Lwt.return (Ok x)
@@ -357,7 +353,7 @@ module Producer = struct
     let open ResultM in
     let _sector = alloc t.info.Mirage_block.sector_size in
     (* add a 4 byte header of size, and round up to the next 4-byte offset *)
-    let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (Cstruct.len item)))) in
+    let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (Cstruct.length item)))) in
     let first_sector = Int64.(div t.producer.producer (of_int t.info.Mirage_block.sector_size)) in
     let first_offset = Int64.(to_int (rem t.producer.producer (of_int t.info.Mirage_block.sector_size))) in
 
@@ -365,23 +361,23 @@ module Producer = struct
        the first page as it's only a 4-byte integer and we're padding to 4-byte offsets. *)
     read_modify_write t first_sector (fun sector ->
       (* Write the header and anything else we can *)
-      Cstruct.LE.set_uint32 sector first_offset (Int32.of_int (Cstruct.len item));
+      Cstruct.LE.set_uint32 sector first_offset (Int32.of_int (Cstruct.length item));
       if first_offset + 4 = t.info.Mirage_block.sector_size
       then item (* We can't write anything else, so just return the item *)
       else begin
-        let this = min (t.info.Mirage_block.sector_size - first_offset - 4) (Cstruct.len item) in
+        let this = min (t.info.Mirage_block.sector_size - first_offset - 4) (Cstruct.length item) in
         Cstruct.blit item 0 sector (first_offset + 4) this;
         Cstruct.shift item this
       end) >>= fun remaining ->
 
     let rec loop offset remaining =
-      if Cstruct.len remaining = 0
+      if Cstruct.length remaining = 0
       then return ()
       else begin
         read_modify_write t offset (fun sector ->
-          let this = min t.info.Mirage_block.sector_size (Cstruct.len remaining) in
+          let this = min t.info.Mirage_block.sector_size (Cstruct.length remaining) in
           let frag = Cstruct.sub sector 0 this in
-          Cstruct.blit remaining 0 frag 0 (Cstruct.len frag);
+          Cstruct.blit remaining 0 frag 0 (Cstruct.length frag);
           Cstruct.shift remaining this) >>= fun remaining ->
         loop (Int64.succ offset) remaining
       end in
@@ -408,7 +404,7 @@ module Producer = struct
       (fun () ->
         let item = Item.to_cstruct item in
         (* every item has a 4 byte header *)
-        let needed_bytes = Int64.(add 4L (of_int (Cstruct.len item))) in
+        let needed_bytes = Int64.(add 4L (of_int (Cstruct.length item))) in
         let open C in
         let open ResultM in
         ok_to_write t needed_bytes
@@ -535,10 +531,10 @@ module Consumer = struct
       let frag = Cstruct.sub sector (4 + first_offset) this in
       Cstruct.blit frag 0 result 0 this;
       let rec loop consumer remaining =
-        if Cstruct.len remaining = 0
+        if Cstruct.length remaining = 0
         then return ()
         else
-          let this = min t.info.Mirage_block.sector_size (Cstruct.len remaining) in
+          let this = min t.info.Mirage_block.sector_size (Cstruct.length remaining) in
           let frag = Cstruct.sub remaining 0 this in
           read Int64.(add sector_data (rem consumer total_sectors)) t.disk sector >>= fun () ->
           Cstruct.blit sector 0 frag 0 this;
@@ -547,7 +543,7 @@ module Consumer = struct
       (* Read the payload before updating the consumer pointer *)
       let needed_bytes = Int64.(logand (lognot 3L) (add 7L (of_int (len)))) in
       match Item.of_cstruct result with
-      | None -> Lwt.return (Error (`Msg (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.len result) (String.escaped (Cstruct.to_string result)))))
+      | None -> Lwt.return (Error (`Msg (Printf.sprintf "Failed to parse queue item: (%d)[%s]" (Cstruct.length result) (String.escaped (Cstruct.to_string result)))))
       | Some result ->
         return (Int64.(add t.consumer.consumer needed_bytes),result)
     end
